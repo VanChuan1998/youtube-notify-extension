@@ -26,7 +26,30 @@ function setStorage(items) {
   return new Promise((resolve) => chrome.storage.local.set(items, resolve));
 }
 function sendMessage(msg) {
-  return new Promise((resolve) => chrome.runtime.sendMessage(msg, resolve));
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(msg, (res) => {
+      // Nếu service worker chết hoặc chưa kịp khởi động, callback được gọi với
+      // res === undefined và lỗi nằm ở chrome.runtime.lastError. Không đọc nó
+      // thì popup hiện "Lỗi: undefined" và Chrome log warning.
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve(res || { ok: false, error: "Không nhận được phản hồi từ extension." });
+    });
+  });
+}
+
+// client_id mặc định trong manifest là chỗ giữ chỗ; OAuth chỉ chạy sau khi người
+// dùng thay bằng client_id thật (xem docs/OAUTH-SETUP.md).
+function getOAuthClientId() {
+  const oauth2 = chrome.runtime.getManifest().oauth2;
+  return (oauth2 && oauth2.client_id) || "";
+}
+
+function isOAuthConfigured() {
+  const id = getOAuthClientId();
+  return !!id && id.endsWith(".apps.googleusercontent.com") && !/[^\x00-\x7F]/.test(id);
 }
 
 function setMsg(el, text, kind) {
@@ -106,7 +129,15 @@ addChannelBtn.addEventListener("click", async () => {
   };
   await setStorage({ channels });
   channelInput.value = "";
-  setMsg(addMsg, `Đã thêm: ${ch.title}`, "ok");
+  setMsg(addMsg, `Đã thêm: ${ch.title}. Đang chốt mốc video mới nhất...`, "ok");
+  await renderChannelList();
+
+  const init = await sendMessage({ type: "initChannel", channelId: ch.id });
+  setMsg(
+    addMsg,
+    init && init.ok ? `Đã thêm: ${ch.title}` : `Đã thêm: ${ch.title} (chưa chốt được mốc: ${init && init.error})`,
+    init && init.ok ? "ok" : "error"
+  );
   await renderChannelList();
 });
 
@@ -260,6 +291,8 @@ async function renderSubsList(subs) {
       addBtn.textContent = "Đã thêm";
       addBtn.disabled = true;
       await renderChannelList();
+      await sendMessage({ type: "initChannel", channelId: sub.id });
+      await renderChannelList();
     });
     item.appendChild(addBtn);
 
@@ -268,6 +301,17 @@ async function renderSubsList(subs) {
 }
 
 loadSubsBtn.addEventListener("click", async () => {
+  if (!isOAuthConfigured()) {
+    setMsg(
+      subsMsg,
+      "Chưa cấu hình OAuth client ID. Mở docs/OAUTH-SETUP.md trong mã nguồn để xem " +
+        "cách tạo client ID trên Google Cloud, rồi dán vào trường oauth2.client_id " +
+        "trong manifest.json và tải lại extension.",
+      "error"
+    );
+    return;
+  }
+
   loadSubsBtn.disabled = true;
   setMsg(subsMsg, "Đang đăng nhập Google...", "");
   try {
@@ -288,4 +332,8 @@ loadSubsBtn.addEventListener("click", async () => {
 (async function init() {
   await loadSettings();
   await renderChannelList();
+  if (!isOAuthConfigured()) {
+    loadSubsBtn.title = "Cần cấu hình OAuth client ID trước — xem docs/OAUTH-SETUP.md";
+    setMsg(subsMsg, "Tính năng này cần OAuth client ID (xem docs/OAUTH-SETUP.md).", "");
+  }
 })();

@@ -3,7 +3,6 @@
   "name": "YouTube Kênh Yêu Thích - Tự Mở Video Mới",
   "version": "1.0.0",
   "description": "Tự động kiểm tra video mới của các kênh YouTube đã chọn và mở tab mới đến video đó.",
-  "default_locale": "en",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

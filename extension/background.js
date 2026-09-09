@@ -5,6 +5,9 @@
 const ALARM_NAME = "ytnotify_check";
 const DEFAULT_INTERVAL_MINUTES = 10;
 const API_BASE = "https://www.googleapis.com/youtube/v3";
+// Số tab tối đa được mở trong 1 vòng kiểm tra. Nếu máy tắt lâu ngày, nhiều kênh
+// cùng có video mới -> tránh bung hàng chục tab một lúc. Phần còn lại chỉ báo notification.
+const MAX_TABS_PER_RUN = 3;
 
 // ---------- Storage helpers ----------
 
@@ -227,6 +230,7 @@ async function checkAllChannels() {
   }
 
   let anyError = "";
+  let tabsOpened = 0;
 
   for (const channelId of watchedIds) {
     const ch = channels[channelId];
@@ -252,11 +256,16 @@ async function checkAllChannels() {
         ch.lastVideoId = latest.videoId;
         ch.lastCheckedTitle = latest.title;
 
-        await chrome.tabs.create({ url: `https://www.youtube.com/watch?v=${latest.videoId}`, active: false });
+        if (tabsOpened < MAX_TABS_PER_RUN) {
+          await chrome.tabs.create({ url: `https://www.youtube.com/watch?v=${latest.videoId}`, active: false });
+          tabsOpened++;
+        }
 
+        // iconUrl phải là đường dẫn trong extension: service worker MV3 không tải
+        // được ảnh remote (https://...) cho notification -> notification sẽ không hiện.
         chrome.notifications.create(`ytnotify_${channelId}_${latest.videoId}`, {
           type: "basic",
-          iconUrl: latest.thumbnail || "icons/icon128.png",
+          iconUrl: "icons/icon128.png",
           title: `Video mới từ ${latest.channelTitle || ch.title}`,
           message: latest.title,
           priority: 2,
@@ -274,6 +283,33 @@ async function checkAllChannels() {
   await setLastError(anyError);
 }
 
+// Chốt mốc "video mới nhất hiện tại" cho một kênh vừa được thêm.
+// Không có bước này, kênh mới chỉ được khởi tạo ở lần alarm kế tiếp (tối đa vài chục
+// phút sau) và hành vi trong khoảng chờ đó khó đoán.
+async function initChannelBaseline(channelId) {
+  const apiKey = await getApiKey();
+  if (!apiKey) throw new Error("Chưa cấu hình API key.");
+
+  const channels = await getChannels();
+  const ch = channels[channelId];
+  if (!ch || ch.initialized) return;
+
+  if (!ch.uploadsPlaylistId) {
+    const info = await fetchChannelInfoById(channelId, apiKey);
+    ch.uploadsPlaylistId = info.uploadsPlaylistId;
+    ch.title = info.title || ch.title;
+    ch.thumbnail = info.thumbnail || ch.thumbnail;
+  }
+
+  const latest = await fetchLatestVideo(ch.uploadsPlaylistId, apiKey);
+  if (latest) {
+    ch.lastVideoId = latest.videoId;
+    ch.lastCheckedTitle = latest.title;
+  }
+  ch.initialized = true;
+  await saveChannels(channels);
+}
+
 // ---------- Nhận message từ popup ----------
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -283,6 +319,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const apiKey = await getApiKey();
         const info = await resolveChannelInput(message.input, apiKey);
         sendResponse({ ok: true, channel: info });
+        return;
+      }
+
+      if (message.type === "initChannel") {
+        await initChannelBaseline(message.channelId);
+        sendResponse({ ok: true });
         return;
       }
 
