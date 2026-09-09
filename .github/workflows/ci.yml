@@ -70,6 +70,11 @@ jobs:
           print(f"OK — {len(re.findall(r'@font-face', css))} khối @font-face, đủ file")
           PY
 
+      - name: Kiểm tra cấu hình wrangler
+        # --dry-run không cần credential, chỉ dựng bản deploy rồi dừng. Bắt lỗi
+        # cấu hình ngay ở CI thay vì để job deploy chết sau khi đã merge.
+        run: npx --yes wrangler@4 deploy --dry-run
+
       - name: Đóng gói extension
         run: ./scripts/pack-extension.sh
 
