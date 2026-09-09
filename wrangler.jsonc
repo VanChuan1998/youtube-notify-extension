@@ -2,6 +2,9 @@
   "name": "youtube-kenh-yeu-thich",
   "compatibility_date": "2026-09-09",
   "assets": {
-    "directory": "./site"
+    "directory": "./web",
+    // Cho phép truy cập /privacy-policy (không đuôi .html) mà không ra 404.
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
   }
 }

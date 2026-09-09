@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Kiểm tra extension và web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Kiểm tra manifest.json hợp lệ
+        run: python3 -m json.tool extension/manifest.json > /dev/null
+
+      - name: default_locale phải đi kèm _locales/
+        # Khai báo default_locale mà thiếu thư mục _locales/ khiến Chrome từ chối
+        # load extension. Đây từng là lỗi chặn của dự án này.
+        run: |
+          if python3 -c "import json,sys; sys.exit(0 if 'default_locale' in json.load(open('extension/manifest.json')) else 1)"; then
+            test -d extension/_locales || { echo "::error::manifest có default_locale nhưng thiếu extension/_locales/"; exit 1; }
+          fi
+
+      - name: Kiểm tra cú pháp JavaScript
+        run: |
+          for f in extension/*.js; do
+            node --check "$f"
+          done
+
+      - name: Kiểm tra cú pháp shell script
+        run: |
+          for f in scripts/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: Mọi trang web phải có meta charset
+        # Thiếu <meta charset="UTF-8"> làm tiếng Việt vỡ thành ký tự lạ khi server
+        # không gửi charset trong Content-Type.
+        run: |
+          for f in web/*.html; do
+            grep -qi '<meta charset="utf-8">' "$f" || { echo "::error file=$f::thiếu <meta charset=\"UTF-8\">"; exit 1; }
+            grep -qi '<!doctype html>' "$f" || { echo "::error file=$f::thiếu <!doctype html>"; exit 1; }
+          done
+
+      - name: Web không được gọi ra font bên thứ ba
+        # Font đã self-host trong web/fonts/. Nếu có tham chiếu Google Fonts quay
+        # lại thì trang phụ thuộc mạng ngoài và lộ IP người dùng cho Google.
+        run: |
+          if grep -rn "fonts.googleapis.com\|fonts.gstatic.com" web/*.html; then
+            echo "::error::web/ còn tham chiếu Google Fonts — chạy scripts/fetch-fonts.sh và dùng fonts.css"
+            exit 1
+          fi
+
+      - name: Mọi font trong fonts.css phải tồn tại
+        run: |
+          python3 - <<'PY'
+          import re, sys, os
+          css = open("web/fonts.css", encoding="utf-8").read()
+          missing = [u for u in re.findall(r"url\('([^']+)'\)", css)
+                     if not os.path.exists(os.path.join("web", u))]
+          if missing:
+              print("::error::thiếu file font: " + ", ".join(missing))
+              sys.exit(1)
+          print(f"OK — {len(re.findall(r'@font-face', css))} khối @font-face, đủ file")
+          PY
+
+      - name: Đóng gói extension
+        run: ./scripts/pack-extension.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-zip
+          path: dist/*.zip
+          if-no-files-found: error

@@ -8,12 +8,20 @@
 3. Đóng phí đăng ký nhà phát triển **5 USD** (thanh toán 1 lần duy nhất, không lặp lại)
 4. Điền thông tin nhà phát triển (tên hiển thị công khai, email liên hệ)
 
-## 2. Đóng gói riêng bản để nộp (dist zip)
+## 2. Đóng gói bản để nộp
 
-Chrome Web Store chỉ cần các file thực sự chạy trong extension — **không** nộp kèm README.md,
-PUBLISHING.md hay privacy-policy.html (những file này chỉ để tham khảo/host riêng).
+Repo này chứa cả extension lẫn landing page. Chrome Web Store chỉ nhận phần extension — nộp
+kèm `web/`, `docs/` hay `.github/` sẽ bị từ chối vì chứa file không dùng đến.
 
-Thư mục cần zip gồm:
+Chạy script, nó lo phần lọc file:
+
+```bash
+./scripts/pack-extension.sh
+```
+
+Kết quả nằm ở `dist/youtube-kenh-yeu-thich-v<version>.zip`, chỉ chứa nội dung `extension/` với
+`manifest.json` ở gốc archive (đúng cấu trúc Web Store yêu cầu):
+
 ```
 manifest.json
 background.js
@@ -25,9 +33,15 @@ icons/icon48.png
 icons/icon128.png
 ```
 
-⚠️ Trước khi zip, nhớ đã dán **Client ID OAuth thật** vào `manifest.json` (theo Bước 2 trong
-README.md) — nếu để nguyên placeholder, chức năng "đăng nhập lấy danh sách subscribe" sẽ báo lỗi
-với người dùng khác.
+Script cũng tự kiểm tra `manifest.json` hợp lệ và cảnh báo nếu `oauth2.client_id` còn là
+placeholder.
+
+Nếu không muốn chạy local: mỗi lần push lên `main`, workflow **CI** đã build sẵn file zip.
+Vào tab **Actions** trên GitHub → chọn lần chạy mới nhất → tải artifact **extension-zip**.
+
+⚠️ Trước khi nộp, nhớ đã dán **Client ID OAuth thật** vào `extension/manifest.json` (xem
+[OAUTH-SETUP.md](OAUTH-SETUP.md)) — để nguyên placeholder thì chức năng "tải danh sách đã
+subscribe" sẽ không dùng được với người khác.
 
 ## 3. Điền Store Listing (trang mô tả)
 

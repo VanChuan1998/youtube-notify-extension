@@ -1,0 +1,45 @@
+name: Deploy web lên Cloudflare
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'wrangler.jsonc'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+# Không chạy hai lần deploy chồng nhau; lần push mới nhất thắng.
+concurrency:
+  group: deploy-web
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: wrangler deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Kiểm tra secret đã được cấu hình
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$TOKEN"   || { echo "::error::thiếu secret CLOUDFLARE_API_TOKEN — xem docs/DEPLOY-CLOUDFLARE.md"; exit 1; }
+          test -n "$ACCOUNT" || { echo "::error::thiếu secret CLOUDFLARE_ACCOUNT_ID — xem docs/DEPLOY-CLOUDFLARE.md"; exit 1; }
+
+      - name: Web phải có meta charset trước khi lên production
+        run: |
+          for f in web/*.html; do
+            grep -qi '<meta charset="utf-8">' "$f" || { echo "::error file=$f::thiếu <meta charset=\"UTF-8\">"; exit 1; }
+          done
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

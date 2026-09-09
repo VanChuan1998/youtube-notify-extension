@@ -1,0 +1,10 @@
+# Gói extension sinh ra bởi scripts/pack-extension.sh
+dist/
+*.zip
+
+# macOS
+.DS_Store
+
+# Trạng thái cục bộ của wrangler
+.wrangler/
+.dev.vars

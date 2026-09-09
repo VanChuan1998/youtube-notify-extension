@@ -3,80 +3,120 @@
 Extension Chrome: chọn các kênh YouTube muốn theo dõi, extension tự động kiểm tra định kỳ
 (mặc định 10 phút/lần) qua YouTube Data API. Khi kênh đăng video mới, extension sẽ:
 
-- Mở 1 tab mới đến video đó
-- Hiện thông báo desktop (notification) kèm tiêu đề video
+- Mở 1 tab mới đến video đó (tối đa 3 tab mỗi vòng kiểm tra)
+- Hiện thông báo desktop kèm tiêu đề video
 
 Có 2 cách thêm kênh vào danh sách theo dõi:
 
-1. Dán URL kênh / `@handle` / tên kênh vào ô "Thêm kênh theo dõi"
-2. Bấm "Đăng nhập Google & tải danh sách đã subscribe" để lấy toàn bộ kênh bạn đã
-   subscribe trên tài khoản Google, rồi bấm "+ Thêm" cho từng kênh muốn theo dõi
-
-**ID cố định của extension này: `meifbaclchfimfdjmpgpkehniloimnfa`**
-(đã được gắn sẵn trong `manifest.json` qua trường `"key"`, để ID không đổi mỗi lần bạn tải lại
-extension — điều này bắt buộc cho bước cấu hình OAuth ở dưới).
+1. Dán URL kênh / `@handle` / tên kênh vào ô "Thêm kênh theo dõi" — chỉ cần API key
+2. Bấm "Đăng nhập Google & tải danh sách đã subscribe" — cần thêm OAuth client ID,
+   xem [docs/OAUTH-SETUP.md](docs/OAUTH-SETUP.md)
 
 ---
 
-## Bước 1 — Tạo API key (bắt buộc, dùng để kiểm tra video mới)
+## Cấu trúc repo
 
-1. Vào https://console.cloud.google.com/ → tạo project mới (hoặc dùng project có sẵn)
-2. Vào **APIs & Services → Library**, tìm **YouTube Data API v3** → bấm **Enable**
-3. Vào **APIs & Services → Credentials** → **Create Credentials → API key**
-4. Copy API key vừa tạo. (Nên bấm "Restrict key" → chọn "YouTube Data API v3" để giới hạn phạm vi cho an toàn)
-5. Dán API key này vào ô **"YouTube Data API key"** trong popup của extension → bấm **Lưu cấu hình**
+Repo chứa hai thứ tách bạch, mỗi thứ có vòng đời triển khai riêng:
 
-Lưu ý về quota: API miễn phí có 10.000 unit/ngày. Mỗi lần kiểm tra 1 kênh tốn ~1-2 unit
-(playlistItems.list), nên theo dõi vài chục kênh, kiểm tra mỗi 10 phút vẫn thoải mái trong hạn mức.
+```
+extension/          Mã nguồn Chrome extension → nộp Chrome Web Store
+├── manifest.json
+├── background.js       service worker: hẹn giờ, gọi API, mở tab
+├── popup.html/js/css   giao diện quản lý kênh
+└── icons/
+
+web/                Landing page + chính sách bảo mật → deploy Cloudflare
+├── index.html
+├── privacy-policy.html
+├── 404.html
+├── fonts.css           sinh tự động, đừng sửa tay
+└── fonts/              font self-host (.woff2)
+
+docs/
+├── OAUTH-SETUP.md          tạo API key và OAuth client ID trên Google Cloud
+├── PUBLISHING.md           nộp lên Chrome Web Store
+└── DEPLOY-CLOUDFLARE.md    deploy web + cấu hình auto-deploy
+
+scripts/
+├── pack-extension.sh   đóng gói extension/ thành zip nộp Web Store
+└── fetch-fonts.sh      tải lại font từ Google Fonts về web/fonts/
+
+.github/workflows/
+├── ci.yml              kiểm tra extension + web mỗi lần push, build sẵn zip
+└── deploy.yml          tự deploy web/ lên Cloudflare khi push lên main
+
+wrangler.jsonc      cấu hình Cloudflare Workers (assets → ./web)
+```
+
+**Vì sao chung một repo:** Chrome Web Store bắt buộc có URL chính sách bảo mật công khai, mà
+nội dung chính sách đó phải mô tả đúng hành vi của extension. Hai thứ luôn phải đổi cùng lúc —
+tách repo chỉ tạo cơ hội cho chúng lệch nhau. Script `pack-extension.sh` đảm bảo file zip nộp
+Web Store không lẫn phần web.
 
 ---
 
-## Bước 2 — Tạo OAuth Client ID (chỉ cần nếu muốn dùng nút "lấy danh sách đã subscribe")
+## Bắt đầu nhanh
 
-Nếu bạn chỉ định thêm kênh bằng cách dán URL/tên kênh thủ công thì **có thể bỏ qua bước này**.
+### 1. Lấy API key
 
-1. Trong cùng project ở Bước 1, vào **APIs & Services → OAuth consent screen**
-   - Chọn **External**, điền tên app (vd "YouTube Kênh Yêu Thích"), email liên hệ
-   - Ở phần **Scopes**, thêm scope `.../auth/youtube.readonly`
-   - Ở phần **Test users**, thêm chính email Gmail bạn dùng để đăng nhập YouTube
-     (khi app ở chế độ Testing, chỉ các email trong danh sách này mới đăng nhập được)
-2. Vào **APIs & Services → Credentials → Create Credentials → OAuth client ID**
-   - **Application type**: chọn **Chrome Extension**
-   - **Application ID**: dán `meifbaclchfimfdjmpgpkehniloimnfa`
-   - Bấm **Create**, copy **Client ID** dạng `xxxxxxxxxx.apps.googleusercontent.com`
-3. Mở file `manifest.json` trong thư mục extension, thay dòng:
-   ```json
-   "client_id": "DÁN_OAUTH_CLIENT_ID_CỦA_BẠN_VÀO_ĐÂY.apps.googleusercontent.com"
-   ```
-   bằng Client ID vừa copy.
-4. Vào `chrome://extensions` → bấm nút **Reload (⟳)** trên extension để áp dụng thay đổi.
+Bắt buộc — extension dùng nó để kiểm tra video mới. Xem
+[docs/OAUTH-SETUP.md](docs/OAUTH-SETUP.md#api-key-bắt-buộc-khác-với-oauth).
 
----
-
-## Bước 3 — Cài extension vào Chrome (chế độ Developer / unpacked)
+### 2. Cài extension vào Chrome
 
 1. Mở `chrome://extensions`
 2. Bật **Developer mode** (góc trên bên phải)
-3. Bấm **Load unpacked** → chọn thư mục `youtube-notify-extension` (thư mục chứa file `manifest.json`)
-4. Extension xuất hiện trên thanh công cụ. Bấm icon để mở popup, nhập API key, thêm kênh.
+3. Bấm **Load unpacked** → chọn thư mục **`extension/`** (thư mục chứa `manifest.json`)
+4. Bấm icon extension để mở popup, dán API key, bấm **Lưu cấu hình**, rồi thêm kênh
+
+Extension ID cố định là **`meifbaclchfimfdjmpgpkehniloimnfa`** — nhờ trường `"key"` trong
+`manifest.json`, ID không đổi giữa các lần cài lại. OAuth client ID gắn với ID này nên
+**đừng xoá trường `key`**.
+
+### 3. (Tuỳ chọn) Bật tính năng tải danh sách đã subscribe
+
+Làm theo [docs/OAUTH-SETUP.md](docs/OAUTH-SETUP.md). Bỏ qua cũng được — thêm kênh thủ công
+vẫn đủ dùng, và popup sẽ hiện nhắc nhở thay vì báo lỗi khó hiểu.
 
 ---
 
 ## Cách hoạt động
 
-- `background.js` chạy nền (service worker), dùng `chrome.alarms` để kiểm tra định kỳ
-- Với mỗi kênh đang theo dõi, gọi API lấy playlist "uploads" của kênh rồi lấy video mới nhất
-- Lần đầu thêm 1 kênh, extension chỉ **ghi nhận mốc** (video mới nhất hiện tại), không mở tab
-  — tránh việc mở hàng loạt tab cho các video cũ. Từ lần kiểm tra sau, nếu có video mới hơn
-  mốc đã lưu thì mới mở tab + thông báo
-- Có thể bấm **"Kiểm tra ngay"** trong popup để test ngay lập tức thay vì chờ đến chu kỳ
+- `background.js` chạy nền (service worker), dùng `chrome.alarms` kiểm tra theo chu kỳ
+- Với mỗi kênh, gọi API lấy playlist "uploads" rồi so video mới nhất với mốc đã lưu
+- Lần đầu thêm kênh, extension **chốt mốc ngay** (video mới nhất hiện tại) và không mở tab —
+  tránh mở hàng loạt tab cho video cũ. Từ đó về sau, có video mới hơn mốc thì mới mở tab
+- Mỗi vòng kiểm tra mở **tối đa 3 tab**; kênh có video mới ngoài giới hạn đó vẫn được báo
+  notification. Giới hạn này tránh việc bung hàng chục tab khi máy tắt lâu ngày
+- Bấm **"Kiểm tra ngay"** trong popup để chạy ngay thay vì chờ hết chu kỳ
+
+## Phát triển
+
+```bash
+./scripts/pack-extension.sh   # tạo dist/*.zip để nộp Web Store
+./scripts/fetch-fonts.sh      # tải lại font cho web/ (chỉ khi đổi bộ font)
+npx wrangler deploy           # deploy web/ thủ công lên Cloudflare
+```
+
+Mỗi lần push lên `main`, CI tự kiểm tra manifest, cú pháp JS, `<meta charset>` của các trang
+web, và build sẵn file zip (tải ở tab **Actions** → artifact `extension-zip`).
 
 ## Xử lý sự cố
 
-- Popup báo lỗi màu đỏ dưới ô API key → thường là API key sai, chưa bật YouTube Data API v3,
-  hoặc đã hết quota trong ngày
-- Nút đăng nhập Google báo lỗi `access_denied` hoặc `invalid_client` → kiểm tra lại Bước 2:
-  Client ID đã dán đúng vào `manifest.json` và extension ID trong Google Cloud khớp với
-  `meifbaclchfimfdjmpgpkehniloimnfa` chưa; email đăng nhập có nằm trong danh sách **Test users** không
-- Nếu vẫn không lấy được token, thử vào `chrome://extensions`, gỡ và load lại extension sau khi sửa
-  `manifest.json`
+**Chrome không load được extension** → kiểm tra `manifest.json` có khai báo `default_locale`
+mà thiếu thư mục `_locales/` không. CI đã có bước chặn lỗi này.
+
+**Popup báo lỗi đỏ dưới ô API key** → API key sai, chưa bật YouTube Data API v3, hoặc hết
+quota ngày. Tăng chu kỳ kiểm tra trong popup nếu hay chạm hạn mức.
+
+**Nút đăng nhập Google báo `access_denied` / `invalid_client`** → xem lại
+[docs/OAUTH-SETUP.md](docs/OAUTH-SETUP.md): client ID đã dán đúng chưa, Extension ID trong
+Google Cloud có khớp `meifbaclchfimfdjmpgpkehniloimnfa` không, email đăng nhập có trong danh
+sách **Test users** không. Sửa `manifest.json` xong phải bấm **Reload (⟳)** ở
+`chrome://extensions`.
+
+**Không thấy notification** → kiểm tra quyền thông báo của Chrome ở cấp hệ điều hành
+(macOS: System Settings → Notifications → Google Chrome).
+
+**Trang web hiện chữ tiếng Việt vỡ (`KÃªnh`)** → thiếu `<meta charset="UTF-8">` trong file
+HTML. CI có bước chặn lỗi này trước khi deploy.
