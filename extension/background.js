@@ -1,15 +1,49 @@
 // background.js — service worker (Manifest V3)
-// Định kỳ kiểm tra video mới nhất của các kênh YouTube đã chọn theo dõi.
-// Nếu có video mới -> mở tab mới đến video đó + hiện thông báo hệ điều hành.
+//
+// Hai vòng lặp tách rời:
+//
+//   1. PHÁT HIỆN (alarm "discover", mặc định 60 giây)
+//      Tải RSS feed của từng kênh. Miễn phí, không tốn quota YouTube Data API,
+//      không giới hạn số kênh. Video ID chưa từng thấy -> đẩy vào hàng chờ.
+//
+//   2. THEO DÕI TRẠNG THÁI LIVE (alarm "livecheck", 30 giây)
+//      Gom toàn bộ ID đang chờ vào MỘT lệnh videos.list (1 unit, tối đa 50 ID)
+//      để biết video là loại gì. Chỉ mở tab khi livestream thực sự lên sóng.
+//
+// Vì sao phải có vòng 2: livestream xuất hiện trong RSS ngay từ lúc được LÊN LỊCH,
+// rất lâu trước khi lên sóng. Không có cơ chế push nào (kể cả WebSub) báo thời
+// điểm chuyển sang live — bắt buộc phải poll trạng thái video.
+//
+// Khi hàng chờ rỗng thì vòng 2 không gọi API lần nào, nên quota gần như bằng 0
+// trong phần lớn thời gian.
 
-const ALARM_NAME = "ytnotify_check";
-const DEFAULT_INTERVAL_MINUTES = 10;
+import { feedUrlForChannel, parseFeed, parseChannelInfo } from "./lib/rss.js";
+import {
+  findNewVideos,
+  rememberSeen,
+  classifyVideo,
+  shouldOpenTab,
+  shouldRecheck,
+  isExpired,
+  chunkIds,
+} from "./lib/decide.js";
+
+const ALARM_DISCOVER = "ytnotify_discover";
+const ALARM_LIVECHECK = "ytnotify_livecheck";
+
+const DEFAULT_DISCOVER_SECONDS = 60;
+const DEFAULT_LIVECHECK_SECONDS = 30;
+
+// Chrome không cho alarm chạy dày hơn 30 giây với extension đã đóng gói.
+const MIN_ALARM_SECONDS = 30;
+
 const API_BASE = "https://www.googleapis.com/youtube/v3";
-// Số tab tối đa được mở trong 1 vòng kiểm tra. Nếu máy tắt lâu ngày, nhiều kênh
-// cùng có video mới -> tránh bung hàng chục tab một lúc. Phần còn lại chỉ báo notification.
+
+// Số tab tối đa mở trong một vòng. Nếu máy tắt lâu ngày, nhiều kênh cùng có
+// video mới -> tránh bung hàng chục tab một lúc. Phần còn lại vẫn báo notification.
 const MAX_TABS_PER_RUN = 3;
 
-// ---------- Storage helpers ----------
+// ---------- Storage ----------
 
 function getStorage(keys) {
   return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
@@ -24,59 +58,73 @@ async function getChannels() {
   return channels || {};
 }
 
-async function saveChannels(channels) {
-  await setStorage({ channels });
+async function getPending() {
+  const { pending } = await getStorage({ pending: {} });
+  return pending || {};
 }
 
 async function getApiKey() {
   const { apiKey } = await getStorage({ apiKey: "" });
-  return apiKey || "";
+  return (apiKey || "").trim();
 }
 
-async function getIntervalMinutes() {
-  const { intervalMinutes } = await getStorage({ intervalMinutes: DEFAULT_INTERVAL_MINUTES });
-  return intervalMinutes || DEFAULT_INTERVAL_MINUTES;
+async function getIntervals() {
+  const { discoverSeconds, liveCheckSeconds } = await getStorage({
+    discoverSeconds: DEFAULT_DISCOVER_SECONDS,
+    liveCheckSeconds: DEFAULT_LIVECHECK_SECONDS,
+  });
+  return {
+    discoverSeconds: Math.max(MIN_ALARM_SECONDS, discoverSeconds || DEFAULT_DISCOVER_SECONDS),
+    liveCheckSeconds: Math.max(MIN_ALARM_SECONDS, liveCheckSeconds || DEFAULT_LIVECHECK_SECONDS),
+  };
 }
 
-async function setLastError(message) {
-  await setStorage({ lastError: message || "", lastCheckAt: Date.now() });
+async function setStatus(patch) {
+  const cur = await getStorage({ status: {} });
+  await setStorage({ status: { ...(cur.status || {}), ...patch } });
   await updateBadge();
 }
 
 async function updateBadge() {
-  const { lastError } = await getStorage({ lastError: "" });
-  if (lastError) {
+  const { status, pending } = await getStorage({ status: {}, pending: {} });
+  const waiting = Object.keys(pending || {}).length;
+
+  if (status && status.lastError) {
     chrome.action.setBadgeText({ text: "!" });
     chrome.action.setBadgeBackgroundColor({ color: "#e01e1e" });
+  } else if (waiting > 0) {
+    // Cho biết đang canh mấy livestream sắp lên sóng.
+    chrome.action.setBadgeText({ text: String(waiting) });
+    chrome.action.setBadgeBackgroundColor({ color: "#1f7a3d" });
   } else {
     chrome.action.setBadgeText({ text: "" });
   }
 }
 
-// ---------- Alarm setup ----------
+// ---------- Alarms ----------
 
-async function ensureAlarm() {
-  const minutes = await getIntervalMinutes();
-  chrome.alarms.create(ALARM_NAME, { periodInMinutes: Math.max(1, minutes) });
+async function ensureAlarms() {
+  const { discoverSeconds, liveCheckSeconds } = await getIntervals();
+  chrome.alarms.create(ALARM_DISCOVER, { periodInMinutes: discoverSeconds / 60 });
+  chrome.alarms.create(ALARM_LIVECHECK, { periodInMinutes: liveCheckSeconds / 60 });
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  ensureAlarm();
+  ensureAlarms();
   updateBadge();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  ensureAlarm();
+  ensureAlarms();
   updateBadge();
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM_NAME) {
-    checkAllChannels();
-  }
+  if (alarm.name === ALARM_DISCOVER) discoverNewVideos();
+  else if (alarm.name === ALARM_LIVECHECK) checkPendingVideos();
 });
 
-// ---------- YouTube API helpers ----------
+// ---------- YouTube Data API ----------
 
 async function apiFetch(path, params, apiKey) {
   const url = new URL(`${API_BASE}${path}`);
@@ -85,263 +133,371 @@ async function apiFetch(path, params, apiKey) {
   const res = await fetch(url.toString());
   const data = await res.json();
   if (!res.ok) {
-    const msg = (data && data.error && data.error.message) || `HTTP ${res.status}`;
-    throw new Error(msg);
+    throw new Error((data && data.error && data.error.message) || `HTTP ${res.status}`);
   }
   return data;
 }
 
-// Lấy uploadsPlaylistId + thông tin cơ bản của 1 kênh theo channelId
 async function fetchChannelInfoById(channelId, apiKey) {
-  const data = await apiFetch("/channels", { part: "snippet,contentDetails", id: channelId }, apiKey);
+  const data = await apiFetch("/channels", { part: "snippet", id: channelId }, apiKey);
   const item = data.items && data.items[0];
   if (!item) throw new Error("Không tìm thấy kênh với ID: " + channelId);
+  const thumbs = item.snippet.thumbnails || {};
   return {
     id: item.id,
     title: item.snippet.title,
-    thumbnail: (item.snippet.thumbnails && (item.snippet.thumbnails.default || item.snippet.thumbnails.medium) || {}).url || "",
-    uploadsPlaylistId: item.contentDetails.relatedPlaylists.uploads,
+    thumbnail: (thumbs.default || thumbs.medium || {}).url || "",
   };
 }
 
-// Phân giải 1 input do người dùng nhập (URL kênh, @handle, tên tuỳ ý, hoặc channelId) thành thông tin kênh
-async function resolveChannelInput(rawInput, apiKey) {
-  const input = rawInput.trim();
+// ---------- Phân giải input thành kênh ----------
+
+const CHANNEL_ID_RE = /UC[0-9A-Za-z_-]{22}/;
+
+// Lấy thông tin kênh chỉ bằng RSS — không cần API key. Đây là thứ khiến chế độ
+// RSS-only dùng được thật sự chứ không chỉ là chế độ què.
+async function channelInfoFromFeed(channelId) {
+  const res = await fetch(feedUrlForChannel(channelId));
+  if (!res.ok) throw new Error(`Không tải được feed của kênh (HTTP ${res.status})`);
+  const info = parseChannelInfo(await res.text());
+  if (!info.id) throw new Error("Feed không hợp lệ hoặc kênh không tồn tại");
+  return { id: info.id, title: info.title || info.id, thumbnail: "" };
+}
+
+// Đổi @handle hoặc URL tuỳ biến thành channelId bằng cách đọc trang kênh.
+// Chỉ chạy một lần lúc thêm kênh, không lặp trong vòng kiểm tra.
+async function resolveChannelIdByScraping(pathSegment) {
+  const res = await fetch(`https://www.youtube.com/${pathSegment}`);
+  if (!res.ok) throw new Error(`Không mở được trang kênh (HTTP ${res.status})`);
+  const html = await res.text();
+  const m =
+    html.match(/"channelId":"(UC[\w-]{22})"/) ||
+    html.match(/"externalId":"(UC[\w-]{22})"/) ||
+    html.match(/channel\/(UC[\w-]{22})/);
+  if (!m) throw new Error("Không tìm thấy channel ID trong trang kênh");
+  return m[1];
+}
+
+export async function resolveChannelInput(rawInput, apiKey) {
+  const input = (rawInput || "").trim();
   if (!input) throw new Error("Vui lòng nhập URL hoặc tên kênh");
-  if (!apiKey) throw new Error("Chưa nhập API key");
 
-  // 1) Channel ID trực tiếp (UCxxxxxxxxxxxxxxxxxxxxxx)
-  const idMatch = input.match(/UC[0-9A-Za-z_-]{22}/);
-  if (idMatch) {
-    return await fetchChannelInfoById(idMatch[0], apiKey);
-  }
-
-  // 2) URL dạng /channel/UCxxxx đã bắt ở trên; kiểm tra các dạng khác
-  let handle = null;
-  let username = null;
-  let customOrQuery = null;
-
-  try {
-    const url = new URL(input.startsWith("http") ? input : `https://${input}`);
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (parts[0] && parts[0].startsWith("@")) {
-      handle = parts[0].slice(1);
-    } else if (parts[0] === "user" && parts[1]) {
-      username = parts[1];
-    } else if (parts[0] === "c" && parts[1]) {
-      customOrQuery = parts[1];
-    } else if (parts[0] && !parts[0].startsWith("http")) {
-      customOrQuery = parts[0];
-    }
-  } catch (e) {
-    // Không phải URL hợp lệ -> coi như handle hoặc tên tìm kiếm
-    if (input.startsWith("@")) {
-      handle = input.slice(1);
-    } else {
-      customOrQuery = input;
-    }
-  }
-
-  // 3) Thử theo handle (API mới hỗ trợ forHandle)
-  if (handle) {
-    try {
-      const data = await apiFetch("/channels", { part: "snippet,contentDetails", forHandle: handle }, apiKey);
-      const item = data.items && data.items[0];
-      if (item) {
-        return {
-          id: item.id,
-          title: item.snippet.title,
-          thumbnail: (item.snippet.thumbnails && (item.snippet.thumbnails.default || item.snippet.thumbnails.medium) || {}).url || "",
-          uploadsPlaylistId: item.contentDetails.relatedPlaylists.uploads,
-        };
+  // 1) Có sẵn channel ID trong input (kể cả nằm trong URL)
+  const direct = input.match(CHANNEL_ID_RE);
+  if (direct) {
+    const id = direct[0];
+    if (apiKey) {
+      try {
+        return await fetchChannelInfoById(id, apiKey);
+      } catch (e) {
+        // API lỗi hoặc hết quota -> vẫn thêm được kênh nhờ feed
       }
-    } catch (e) {
-      // rơi xuống tìm kiếm bên dưới
     }
-    customOrQuery = customOrQuery || handle;
+    return await channelInfoFromFeed(id);
   }
 
-  // 4) Thử theo username cũ (forUsername)
-  if (username) {
-    try {
-      const data = await apiFetch("/channels", { part: "snippet,contentDetails", forUsername: username }, apiKey);
-      const item = data.items && data.items[0];
-      if (item) {
-        return {
-          id: item.id,
-          title: item.snippet.title,
-          thumbnail: (item.snippet.thumbnails && (item.snippet.thumbnails.default || item.snippet.thumbnails.medium) || {}).url || "",
-          uploadsPlaylistId: item.contentDetails.relatedPlaylists.uploads,
-        };
+  // 2) @handle hoặc URL kênh -> đọc trang kênh lấy channelId
+  let segment = null;
+  const trimmed = input.replace(/^https?:\/\/(www\.)?youtube\.com\//i, "");
+  if (trimmed.startsWith("@")) {
+    segment = trimmed.split(/[/?#]/)[0];
+  } else if (/^(c|user)\//i.test(trimmed)) {
+    segment = trimmed.split(/[?#]/)[0];
+  } else if (input.startsWith("@")) {
+    segment = input.split(/[/?#]/)[0];
+  }
+
+  if (segment) {
+    const id = await resolveChannelIdByScraping(segment);
+    if (apiKey) {
+      try {
+        return await fetchChannelInfoById(id, apiKey);
+      } catch (e) {
+        /* rơi xuống feed */
       }
-    } catch (e) {
-      // rơi xuống tìm kiếm bên dưới
     }
-    customOrQuery = customOrQuery || username;
+    return await channelInfoFromFeed(id);
   }
 
-  // 5) Cuối cùng: tìm kiếm gần đúng bằng search.list rồi lấy channel đầu tiên
-  const query = customOrQuery || input;
-  const searchData = await apiFetch(
+  // 3) Cuối cùng: tìm theo tên. Chỉ làm được khi có API key, và tốn 100 unit
+  //    nên đây là lựa chọn cuối.
+  if (!apiKey) {
+    throw new Error(
+      "Chưa có API key nên chỉ thêm được bằng URL kênh, @handle hoặc channel ID (UC...)."
+    );
+  }
+  const search = await apiFetch(
     "/search",
-    { part: "snippet", type: "channel", q: query, maxResults: 1 },
+    { part: "snippet", type: "channel", q: input, maxResults: 1 },
     apiKey
   );
-  const first = searchData.items && searchData.items[0];
+  const first = search.items && search.items[0];
   if (!first) throw new Error("Không tìm thấy kênh phù hợp với: " + input);
   return await fetchChannelInfoById(first.snippet.channelId, apiKey);
 }
 
-// Lấy video mới nhất trong playlist "uploads" của 1 kênh
-async function fetchLatestVideo(uploadsPlaylistId, apiKey) {
-  const data = await apiFetch(
-    "/playlistItems",
-    { part: "snippet,contentDetails", playlistId: uploadsPlaylistId, maxResults: 1 },
-    apiKey
-  );
-  const item = data.items && data.items[0];
-  if (!item) return null;
-  return {
-    videoId: item.contentDetails.videoId,
-    title: item.snippet.title,
-    channelTitle: item.snippet.channelTitle,
-    thumbnail:
-      (item.snippet.thumbnails &&
-        (item.snippet.thumbnails.medium || item.snippet.thumbnails.default) || {}).url || "",
-    publishedAt: item.contentDetails.videoPublishedAt || item.snippet.publishedAt,
-  };
-}
+// ---------- Vòng 1: phát hiện video mới qua RSS ----------
 
-// ---------- Vòng kiểm tra chính ----------
-
-async function checkAllChannels() {
-  const apiKey = await getApiKey();
-  if (!apiKey) {
-    await setLastError("Chưa cấu hình API key. Mở popup extension để nhập.");
-    return;
-  }
-
+async function discoverNewVideos() {
   const channels = await getChannels();
-  const watchedIds = Object.keys(channels).filter((id) => channels[id].watched);
-
-  if (watchedIds.length === 0) {
-    await setLastError("");
+  const watched = Object.values(channels).filter((c) => c.watched);
+  if (watched.length === 0) {
+    await setStatus({ lastError: "", lastDiscoverAt: Date.now() });
     return;
   }
 
+  const pending = await getPending();
   let anyError = "";
-  let tabsOpened = 0;
+  let foundCount = 0;
 
-  for (const channelId of watchedIds) {
-    const ch = channels[channelId];
+  for (const ch of watched) {
     try {
-      // Đảm bảo có uploadsPlaylistId
-      if (!ch.uploadsPlaylistId) {
-        const info = await fetchChannelInfoById(channelId, apiKey);
-        ch.uploadsPlaylistId = info.uploadsPlaylistId;
-        ch.title = info.title || ch.title;
-        ch.thumbnail = info.thumbnail || ch.thumbnail;
+      const headers = {};
+      // Conditional GET: phần lớn lần gọi trả 304 rỗng, gần như không tốn băng thông.
+      if (ch.etag) headers["If-None-Match"] = ch.etag;
+      else if (ch.lastModified) headers["If-Modified-Since"] = ch.lastModified;
+
+      const res = await fetch(feedUrlForChannel(ch.id), { headers });
+
+      if (res.status === 304) {
+        ch.lastError = "";
+        continue;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      ch.etag = res.headers.get("etag") || "";
+      ch.lastModified = res.headers.get("last-modified") || "";
+
+      const videos = parseFeed(await res.text());
+      if (videos.length === 0) {
+        ch.lastError = "";
+        continue;
       }
 
-      const latest = await fetchLatestVideo(ch.uploadsPlaylistId, apiKey);
-      if (!latest) continue;
+      const fresh = findNewVideos(videos, ch.seenVideoIds);
 
       if (!ch.initialized) {
-        // Lần đầu theo dõi: chỉ lưu mốc, không mở tab video cũ
-        ch.lastVideoId = latest.videoId;
+        // Lần đầu theo dõi: chỉ chốt mốc, không mở tab cho video cũ.
+        ch.seenVideoIds = rememberSeen([], videos.map((v) => v.videoId));
         ch.initialized = true;
-        ch.lastCheckedTitle = latest.title;
-      } else if (latest.videoId !== ch.lastVideoId) {
-        // Có video mới thật sự -> mở tab + thông báo
-        ch.lastVideoId = latest.videoId;
-        ch.lastCheckedTitle = latest.title;
-
-        if (tabsOpened < MAX_TABS_PER_RUN) {
-          await chrome.tabs.create({ url: `https://www.youtube.com/watch?v=${latest.videoId}`, active: false });
-          tabsOpened++;
+        ch.lastCheckedTitle = videos[0].title;
+      } else if (fresh.length) {
+        for (const v of fresh) {
+          pending[v.videoId] = {
+            videoId: v.videoId,
+            channelId: ch.id,
+            title: v.title,
+            thumbnail: v.thumbnail,
+            state: "unknown",
+            scheduledStartTime: "",
+            firstSeenAt: Date.now(),
+            lastCheckedAt: 0,
+          };
         }
-
-        // iconUrl phải là đường dẫn trong extension: service worker MV3 không tải
-        // được ảnh remote (https://...) cho notification -> notification sẽ không hiện.
-        chrome.notifications.create(`ytnotify_${channelId}_${latest.videoId}`, {
-          type: "basic",
-          iconUrl: "icons/icon128.png",
-          title: `Video mới từ ${latest.channelTitle || ch.title}`,
-          message: latest.title,
-          priority: 2,
-        });
+        ch.seenVideoIds = rememberSeen(ch.seenVideoIds, fresh.map((v) => v.videoId));
+        ch.lastCheckedTitle = fresh[0].title;
+        foundCount += fresh.length;
       }
 
       ch.lastError = "";
     } catch (err) {
       ch.lastError = err.message || String(err);
-      anyError = ch.lastError;
+      anyError = `${ch.title || ch.id}: ${ch.lastError}`;
     }
   }
 
-  await saveChannels(channels);
-  await setLastError(anyError);
+  await setStorage({ channels, pending });
+  await setStatus({ lastError: anyError, lastDiscoverAt: Date.now() });
+
+  // Có video mới thì phân loại ngay, không đợi hết chu kỳ vòng 2.
+  if (foundCount > 0) await checkPendingVideos();
 }
 
-// Chốt mốc "video mới nhất hiện tại" cho một kênh vừa được thêm.
-// Không có bước này, kênh mới chỉ được khởi tạo ở lần alarm kế tiếp (tối đa vài chục
-// phút sau) và hành vi trong khoảng chờ đó khó đoán.
-async function initChannelBaseline(channelId) {
-  const apiKey = await getApiKey();
-  if (!apiKey) throw new Error("Chưa cấu hình API key.");
+// ---------- Vòng 2: phân loại và theo dõi trạng thái live ----------
 
+async function checkPendingVideos() {
+  const pending = await getPending();
+  const now = Date.now();
+
+  // Dọn các mục quá hạn trước, để không kéo theo chúng vào lệnh gọi API.
+  let changed = false;
+  for (const [id, entry] of Object.entries(pending)) {
+    if (isExpired(entry, now)) {
+      delete pending[id];
+      changed = true;
+    }
+  }
+
+  const due = Object.values(pending).filter((e) => shouldRecheck(e, now));
+  if (due.length === 0) {
+    if (changed) await setStorage({ pending });
+    await updateBadge();
+    return;
+  }
+
+  const apiKey = await getApiKey();
+
+  // Chế độ RSS-only: không có key thì không phân biệt được live/upcoming.
+  // Coi mọi video như video thường và xử lý theo mode của kênh.
+  if (!apiKey) {
+    await handleClassified(
+      due.map((e) => ({ entry: e, state: "none" })),
+      pending
+    );
+    return;
+  }
+
+  const channels = await getChannels();
+  const classified = [];
+
+  try {
+    for (const batch of chunkIds(due.map((e) => e.videoId))) {
+      const data = await apiFetch(
+        "/videos",
+        { part: "snippet,liveStreamingDetails", id: batch.join(",") },
+        apiKey
+      );
+
+      const byId = new Map((data.items || []).map((it) => [it.id, it]));
+
+      for (const videoId of batch) {
+        const entry = pending[videoId];
+        if (!entry) continue;
+
+        const item = byId.get(videoId);
+        if (!item) {
+          // Video bị xoá, đặt riêng tư, hoặc ID sai -> ngừng theo dõi.
+          delete pending[videoId];
+          changed = true;
+          continue;
+        }
+
+        entry.lastCheckedAt = now;
+        entry.title = (item.snippet && item.snippet.title) || entry.title;
+        entry.scheduledStartTime =
+          (item.liveStreamingDetails && item.liveStreamingDetails.scheduledStartTime) || "";
+
+        classified.push({ entry, state: classifyVideo(item) });
+      }
+    }
+  } catch (err) {
+    // Hết quota hoặc key sai: giữ nguyên hàng chờ, thử lại vòng sau.
+    await setStorage({ pending });
+    await setStatus({ lastError: err.message || String(err), lastLiveCheckAt: now });
+    return;
+  }
+
+  await handleClassified(classified, pending, channels);
+  await setStatus({ lastError: "", lastLiveCheckAt: now });
+}
+
+// Mở tab / báo notification theo trạng thái và mode của kênh.
+async function handleClassified(classified, pending, channelsArg) {
+  const channels = channelsArg || (await getChannels());
+  let tabsOpened = 0;
+
+  for (const { entry, state } of classified) {
+    const ch = channels[entry.channelId] || {};
+    const mode = ch.mode === "liveOnly" ? "liveOnly" : "all";
+
+    if (state === "upcoming") {
+      // Chưa lên sóng: giữ lại trong hàng chờ, kiểm tra tiếp ở vòng sau.
+      entry.state = "upcoming";
+      pending[entry.videoId] = entry;
+      continue;
+    }
+
+    if (shouldOpenTab(state, mode)) {
+      if (tabsOpened < MAX_TABS_PER_RUN) {
+        await chrome.tabs.create({
+          url: `https://www.youtube.com/watch?v=${entry.videoId}`,
+          active: false,
+        });
+        tabsOpened++;
+      }
+      notify(entry, state, ch);
+    } else if (state !== "upcoming" && mode === "liveOnly") {
+      // Kênh chỉ quan tâm livestream: video thường vẫn báo, chỉ không mở tab.
+      notify(entry, state, ch);
+    }
+
+    delete pending[entry.videoId];
+  }
+
+  await setStorage({ pending, channels });
+  await updateBadge();
+}
+
+function notify(entry, state, ch) {
+  const nhan = state === "live" ? "🔴 ĐANG LIVE" : "Video mới";
+  chrome.notifications.create(`ytnotify_${entry.videoId}`, {
+    type: "basic",
+    // iconUrl phải là đường dẫn trong extension: service worker MV3 không tải
+    // được ảnh remote (https://...) cho notification.
+    iconUrl: "icons/icon128.png",
+    title: `${nhan} — ${ch.title || "Kênh đã theo dõi"}`,
+    message: entry.title || entry.videoId,
+    priority: 2,
+  });
+}
+
+// Bấm vào notification thì mở video (hữu ích khi tab không được mở tự động).
+chrome.notifications.onClicked.addListener((id) => {
+  if (!id.startsWith("ytnotify_")) return;
+  const videoId = id.slice("ytnotify_".length);
+  chrome.tabs.create({ url: `https://www.youtube.com/watch?v=${videoId}`, active: true });
+  chrome.notifications.clear(id);
+});
+
+// ---------- Chốt mốc cho kênh vừa thêm ----------
+
+async function initChannelBaseline(channelId) {
   const channels = await getChannels();
   const ch = channels[channelId];
   if (!ch || ch.initialized) return;
 
-  if (!ch.uploadsPlaylistId) {
-    const info = await fetchChannelInfoById(channelId, apiKey);
-    ch.uploadsPlaylistId = info.uploadsPlaylistId;
-    ch.title = info.title || ch.title;
-    ch.thumbnail = info.thumbnail || ch.thumbnail;
-  }
+  const res = await fetch(feedUrlForChannel(channelId));
+  if (!res.ok) throw new Error(`Không tải được feed (HTTP ${res.status})`);
 
-  const latest = await fetchLatestVideo(ch.uploadsPlaylistId, apiKey);
-  if (latest) {
-    ch.lastVideoId = latest.videoId;
-    ch.lastCheckedTitle = latest.title;
-  }
+  const videos = parseFeed(await res.text());
+  ch.seenVideoIds = rememberSeen([], videos.map((v) => v.videoId));
   ch.initialized = true;
-  await saveChannels(channels);
+  ch.lastCheckedTitle = videos.length ? videos[0].title : "";
+  ch.lastError = "";
+  await setStorage({ channels });
 }
 
-// ---------- Nhận message từ popup ----------
+// ---------- Message từ popup ----------
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     try {
-      if (message.type === "resolveChannel") {
-        const apiKey = await getApiKey();
-        const info = await resolveChannelInput(message.input, apiKey);
-        sendResponse({ ok: true, channel: info });
-        return;
+      switch (message.type) {
+        case "resolveChannel": {
+          const info = await resolveChannelInput(message.input, await getApiKey());
+          sendResponse({ ok: true, channel: info });
+          return;
+        }
+        case "initChannel":
+          await initChannelBaseline(message.channelId);
+          sendResponse({ ok: true });
+          return;
+        case "checkNow":
+          await discoverNewVideos();
+          await checkPendingVideos();
+          sendResponse({ ok: true });
+          return;
+        case "updateIntervals":
+          await setStorage({
+            discoverSeconds: message.discoverSeconds,
+            liveCheckSeconds: message.liveCheckSeconds,
+          });
+          await ensureAlarms();
+          sendResponse({ ok: true });
+          return;
+        default:
+          sendResponse({ ok: false, error: "Unknown message type: " + message.type });
       }
-
-      if (message.type === "initChannel") {
-        await initChannelBaseline(message.channelId);
-        sendResponse({ ok: true });
-        return;
-      }
-
-      if (message.type === "checkNow") {
-        await checkAllChannels();
-        sendResponse({ ok: true });
-        return;
-      }
-
-      if (message.type === "updateInterval") {
-        await setStorage({ intervalMinutes: message.minutes });
-        await ensureAlarm();
-        sendResponse({ ok: true });
-        return;
-      }
-
-      sendResponse({ ok: false, error: "Unknown message type" });
     } catch (err) {
       sendResponse({ ok: false, error: err.message || String(err) });
     }

@@ -186,3 +186,46 @@ footer {
   text-align: center;
   padding-top: 4px;
 }
+
+/* Chọn hành vi riêng cho từng kênh: mọi video / chỉ livestream */
+.channel-item .mode-select {
+  margin-top: 4px;
+  font-size: 10.5px;
+  padding: 2px 4px;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  max-width: 130px;
+}
+
+/* Hai ô số cạnh nhau trong phần cấu hình */
+.field {
+  flex: 1;
+  min-width: 0;
+}
+
+.field label {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.field input {
+  width: 100%;
+}
+
+.small {
+  font-size: 10.5px;
+  line-height: 1.4;
+  margin: 4px 0 8px;
+}
+
+/* Link trông như nút phụ, dùng ở danh sách chờ lên sóng */
+.btn-link {
+  text-decoration: none;
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+}

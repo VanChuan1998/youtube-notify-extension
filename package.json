@@ -1,0 +1,14 @@
+{
+  "name": "youtube-kenh-yeu-thich",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Chrome extension theo dõi kênh YouTube + landing page",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "pack": "./scripts/pack-extension.sh",
+    "fonts": "./scripts/fetch-fonts.sh",
+    "deploy": "wrangler deploy"
+  },
+  "license": "MIT"
+}

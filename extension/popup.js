@@ -1,36 +1,44 @@
 // popup.js
 
-const apiKeyInput = document.getElementById("apiKeyInput");
-const toggleKeyVisibility = document.getElementById("toggleKeyVisibility");
-const intervalInput = document.getElementById("intervalInput");
-const saveSettingsBtn = document.getElementById("saveSettingsBtn");
-const checkNowBtn = document.getElementById("checkNowBtn");
-const statusMsg = document.getElementById("statusMsg");
+const $ = (id) => document.getElementById(id);
 
-const channelInput = document.getElementById("channelInput");
-const addChannelBtn = document.getElementById("addChannelBtn");
-const addMsg = document.getElementById("addMsg");
+const apiKeyInput = $("apiKeyInput");
+const toggleKeyVisibility = $("toggleKeyVisibility");
+const discoverInput = $("discoverInput");
+const liveCheckInput = $("liveCheckInput");
+const saveSettingsBtn = $("saveSettingsBtn");
+const checkNowBtn = $("checkNowBtn");
+const statusMsg = $("statusMsg");
 
-const loadSubsBtn = document.getElementById("loadSubsBtn");
-const subsMsg = document.getElementById("subsMsg");
-const subsList = document.getElementById("subsList");
+const channelInput = $("channelInput");
+const addChannelBtn = $("addChannelBtn");
+const addMsg = $("addMsg");
 
-const channelList = document.getElementById("channelList");
-const emptyMsg = document.getElementById("emptyMsg");
-const lastCheckInfo = document.getElementById("lastCheckInfo");
+const pendingCard = $("pendingCard");
+const pendingList = $("pendingList");
+const liveEvery = $("liveEvery");
+
+const loadSubsBtn = $("loadSubsBtn");
+const subsMsg = $("subsMsg");
+const subsList = $("subsList");
+
+const channelList = $("channelList");
+const emptyMsg = $("emptyMsg");
+const lastCheckInfo = $("lastCheckInfo");
 
 function getStorage(keys) {
   return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
 }
+
 function setStorage(items) {
   return new Promise((resolve) => chrome.storage.local.set(items, resolve));
 }
+
 function sendMessage(msg) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(msg, (res) => {
       // Nếu service worker chết hoặc chưa kịp khởi động, callback được gọi với
-      // res === undefined và lỗi nằm ở chrome.runtime.lastError. Không đọc nó
-      // thì popup hiện "Lỗi: undefined" và Chrome log warning.
+      // res === undefined và lỗi nằm ở chrome.runtime.lastError.
       if (chrome.runtime.lastError) {
         resolve({ ok: false, error: chrome.runtime.lastError.message });
         return;
@@ -40,38 +48,48 @@ function sendMessage(msg) {
   });
 }
 
-// client_id mặc định trong manifest là chỗ giữ chỗ; OAuth chỉ chạy sau khi người
-// dùng thay bằng client_id thật (xem docs/OAUTH-SETUP.md).
-function getOAuthClientId() {
-  const oauth2 = chrome.runtime.getManifest().oauth2;
-  return (oauth2 && oauth2.client_id) || "";
-}
-
-function isOAuthConfigured() {
-  const id = getOAuthClientId();
-  return !!id && id.endsWith(".apps.googleusercontent.com") && !/[^\x00-\x7F]/.test(id);
-}
-
 function setMsg(el, text, kind) {
   el.textContent = text || "";
   el.className = "status" + (kind ? " " + kind : "");
 }
 
+// client_id mặc định trong manifest là chỗ giữ chỗ; OAuth chỉ chạy sau khi người
+// dùng thay bằng client_id thật (xem docs/OAUTH-SETUP.md).
+function isOAuthConfigured() {
+  const oauth2 = chrome.runtime.getManifest().oauth2;
+  const id = (oauth2 && oauth2.client_id) || "";
+  return !!id && id.endsWith(".apps.googleusercontent.com") && !/[^\x00-\x7F]/.test(id);
+}
+
+function timeAgo(ts) {
+  if (!ts) return "chưa chạy";
+  const s = Math.round((Date.now() - ts) / 1000);
+  if (s < 60) return `${s} giây trước`;
+  if (s < 3600) return `${Math.round(s / 60)} phút trước`;
+  return new Date(ts).toLocaleString("vi-VN");
+}
+
 // ---------- Cấu hình ----------
 
 async function loadSettings() {
-  const { apiKey, intervalMinutes, lastError, lastCheckAt } = await getStorage({
+  const { apiKey, discoverSeconds, liveCheckSeconds, status } = await getStorage({
     apiKey: "",
-    intervalMinutes: 10,
-    lastError: "",
-    lastCheckAt: 0,
+    discoverSeconds: 60,
+    liveCheckSeconds: 30,
+    status: {},
   });
+
   apiKeyInput.value = apiKey || "";
-  intervalInput.value = intervalMinutes || 10;
-  if (lastError) setMsg(statusMsg, "Lỗi: " + lastError, "error");
-  if (lastCheckAt) {
-    lastCheckInfo.textContent = "Lần kiểm tra gần nhất: " + new Date(lastCheckAt).toLocaleString("vi-VN");
-  }
+  discoverInput.value = discoverSeconds || 60;
+  liveCheckInput.value = liveCheckSeconds || 30;
+  liveEvery.textContent = liveCheckSeconds || 30;
+
+  if (status && status.lastError) setMsg(statusMsg, "Lỗi: " + status.lastError, "error");
+
+  const parts = [];
+  if (status && status.lastDiscoverAt) parts.push("Quét kênh: " + timeAgo(status.lastDiscoverAt));
+  if (status && status.lastLiveCheckAt) parts.push("Kiểm tra live: " + timeAgo(status.lastLiveCheckAt));
+  lastCheckInfo.textContent = parts.join(" · ");
 }
 
 toggleKeyVisibility.addEventListener("click", () => {
@@ -80,10 +98,20 @@ toggleKeyVisibility.addEventListener("click", () => {
 
 saveSettingsBtn.addEventListener("click", async () => {
   const apiKey = apiKeyInput.value.trim();
-  const minutes = Math.max(1, parseInt(intervalInput.value, 10) || 10);
+  const discoverSeconds = Math.max(30, parseInt(discoverInput.value, 10) || 60);
+  const liveCheckSeconds = Math.max(30, parseInt(liveCheckInput.value, 10) || 30);
+
+  discoverInput.value = discoverSeconds;
+  liveCheckInput.value = liveCheckSeconds;
+  liveEvery.textContent = liveCheckSeconds;
+
   await setStorage({ apiKey });
-  await sendMessage({ type: "updateInterval", minutes });
-  setMsg(statusMsg, "Đã lưu cấu hình.", "ok");
+  const res = await sendMessage({ type: "updateIntervals", discoverSeconds, liveCheckSeconds });
+  setMsg(
+    statusMsg,
+    res && res.ok ? "Đã lưu cấu hình." : "Lỗi: " + (res && res.error),
+    res && res.ok ? "ok" : "error"
+  );
 });
 
 checkNowBtn.addEventListener("click", async () => {
@@ -91,20 +119,25 @@ checkNowBtn.addEventListener("click", async () => {
   checkNowBtn.disabled = true;
   const res = await sendMessage({ type: "checkNow" });
   checkNowBtn.disabled = false;
-  if (res && res.ok) {
-    setMsg(statusMsg, "Đã kiểm tra xong.", "ok");
-  } else {
-    setMsg(statusMsg, "Lỗi: " + (res && res.error), "error");
-  }
-  await loadSettings();
-  await renderChannelList();
+  setMsg(
+    statusMsg,
+    res && res.ok ? "Đã kiểm tra xong." : "Lỗi: " + (res && res.error),
+    res && res.ok ? "ok" : "error"
+  );
+  await refresh();
 });
 
-// ---------- Thêm kênh thủ công ----------
+// ---------- Thêm kênh ----------
 
-addChannelBtn.addEventListener("click", async () => {
+addChannelBtn.addEventListener("click", addChannel);
+channelInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") addChannel();
+});
+
+async function addChannel() {
   const input = channelInput.value.trim();
   if (!input) return;
+
   addChannelBtn.disabled = true;
   setMsg(addMsg, "Đang tìm kênh...", "");
   const res = await sendMessage({ type: "resolveChannel", input });
@@ -115,21 +148,24 @@ addChannelBtn.addEventListener("click", async () => {
     return;
   }
 
-  const { channels } = await getStorage({ channels: {} });
   const ch = res.channel;
+  const { channels } = await getStorage({ channels: {} });
   channels[ch.id] = {
     id: ch.id,
     title: ch.title,
     thumbnail: ch.thumbnail,
-    uploadsPlaylistId: ch.uploadsPlaylistId,
     watched: true,
+    mode: "all",
     initialized: false,
-    lastVideoId: null,
+    seenVideoIds: [],
+    etag: "",
+    lastModified: "",
     addedAt: Date.now(),
   };
   await setStorage({ channels });
+
   channelInput.value = "";
-  setMsg(addMsg, `Đã thêm: ${ch.title}. Đang chốt mốc video mới nhất...`, "ok");
+  setMsg(addMsg, `Đã thêm: ${ch.title}. Đang chốt mốc...`, "ok");
   await renderChannelList();
 
   const init = await sendMessage({ type: "initChannel", channelId: ch.id });
@@ -139,9 +175,9 @@ addChannelBtn.addEventListener("click", async () => {
     init && init.ok ? "ok" : "error"
   );
   await renderChannelList();
-});
+}
 
-// ---------- Danh sách kênh đang theo dõi ----------
+// ---------- Danh sách kênh ----------
 
 async function renderChannelList() {
   const { channels } = await getStorage({ channels: {} });
@@ -160,9 +196,12 @@ async function renderChannelList() {
 
     const info = document.createElement("div");
     info.className = "info";
+
     const title = document.createElement("div");
     title.className = "title";
     title.textContent = ch.title || ch.id;
+    info.appendChild(title);
+
     const subtitle = document.createElement("div");
     subtitle.className = "subtitle";
     subtitle.textContent = ch.lastError
@@ -170,8 +209,28 @@ async function renderChannelList() {
       : ch.lastCheckedTitle
       ? "Mới nhất: " + ch.lastCheckedTitle
       : "Chưa kiểm tra";
-    info.appendChild(title);
     info.appendChild(subtitle);
+
+    // Chọn hành vi riêng cho từng kênh: kênh hay livestream thì đặt "Chỉ livestream"
+    // để video thường không mở tab.
+    const mode = document.createElement("select");
+    mode.className = "mode-select";
+    for (const [value, label] of [["all", "Mọi video"], ["liveOnly", "Chỉ livestream"]]) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      mode.appendChild(opt);
+    }
+    mode.value = ch.mode === "liveOnly" ? "liveOnly" : "all";
+    mode.addEventListener("change", async () => {
+      const { channels: latest } = await getStorage({ channels: {} });
+      if (latest[ch.id]) {
+        latest[ch.id].mode = mode.value;
+        await setStorage({ channels: latest });
+      }
+    });
+    info.appendChild(mode);
+
     item.appendChild(info);
 
     const toggle = document.createElement("input");
@@ -203,7 +262,53 @@ async function renderChannelList() {
   }
 }
 
-// ---------- Lấy danh sách kênh đã subscribe (OAuth) ----------
+// ---------- Đang chờ lên sóng ----------
+
+async function renderPending() {
+  const { pending, channels } = await getStorage({ pending: {}, channels: {} });
+  const list = Object.values(pending || {}).sort(
+    (a, b) => Date.parse(a.scheduledStartTime || 0) - Date.parse(b.scheduledStartTime || 0)
+  );
+
+  pendingCard.style.display = list.length ? "block" : "none";
+  pendingList.innerHTML = "";
+
+  for (const entry of list) {
+    const ch = (channels || {})[entry.channelId] || {};
+
+    const item = document.createElement("div");
+    item.className = "channel-item";
+
+    const info = document.createElement("div");
+    info.className = "info";
+
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = entry.title || entry.videoId;
+    info.appendChild(title);
+
+    const subtitle = document.createElement("div");
+    subtitle.className = "subtitle";
+    const when = entry.scheduledStartTime
+      ? "Dự kiến " + new Date(entry.scheduledStartTime).toLocaleString("vi-VN")
+      : "Chưa rõ giờ phát";
+    subtitle.textContent = `${ch.title || entry.channelId} · ${when}`;
+    info.appendChild(subtitle);
+
+    item.appendChild(info);
+
+    const open = document.createElement("a");
+    open.className = "secondary btn-link";
+    open.textContent = "Mở";
+    open.href = `https://www.youtube.com/watch?v=${entry.videoId}`;
+    open.target = "_blank";
+    item.appendChild(open);
+
+    pendingList.appendChild(item);
+  }
+}
+
+// ---------- Subscriptions (OAuth) ----------
 
 function getAuthToken(interactive) {
   return new Promise((resolve, reject) => {
@@ -218,7 +323,7 @@ function getAuthToken(interactive) {
 }
 
 async function fetchAllSubscriptions(token) {
-  let subs = [];
+  const subs = [];
   let pageToken = "";
   do {
     const url = new URL("https://www.googleapis.com/youtube/v3/subscriptions");
@@ -228,20 +333,16 @@ async function fetchAllSubscriptions(token) {
     url.searchParams.set("order", "alphabetical");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
 
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
     const data = await res.json();
-    if (!res.ok) {
-      throw new Error((data.error && data.error.message) || `HTTP ${res.status}`);
-    }
+    if (!res.ok) throw new Error((data.error && data.error.message) || `HTTP ${res.status}`);
+
     for (const item of data.items || []) {
+      const thumbs = item.snippet.thumbnails || {};
       subs.push({
         id: item.snippet.resourceId.channelId,
         title: item.snippet.title,
-        thumbnail:
-          (item.snippet.thumbnails &&
-            (item.snippet.thumbnails.default || item.snippet.thumbnails.medium) || {}).url || "",
+        thumbnail: (thumbs.default || thumbs.medium || {}).url || "",
       });
     }
     pageToken = data.nextPageToken || "";
@@ -281,10 +382,12 @@ async function renderSubsList(subs) {
         id: sub.id,
         title: sub.title,
         thumbnail: sub.thumbnail,
-        uploadsPlaylistId: null,
         watched: true,
+        mode: "all",
         initialized: false,
-        lastVideoId: null,
+        seenVideoIds: [],
+        etag: "",
+        lastModified: "",
         addedAt: Date.now(),
       };
       await setStorage({ channels: latest });
@@ -304,9 +407,8 @@ loadSubsBtn.addEventListener("click", async () => {
   if (!isOAuthConfigured()) {
     setMsg(
       subsMsg,
-      "Chưa cấu hình OAuth client ID. Mở docs/OAUTH-SETUP.md trong mã nguồn để xem " +
-        "cách tạo client ID trên Google Cloud, rồi dán vào trường oauth2.client_id " +
-        "trong manifest.json và tải lại extension.",
+      "Chưa cấu hình OAuth client ID. Xem docs/OAUTH-SETUP.md trong mã nguồn để tạo " +
+        "client ID trên Google Cloud, dán vào oauth2.client_id trong manifest.json rồi tải lại extension.",
       "error"
     );
     return;
@@ -329,11 +431,22 @@ loadSubsBtn.addEventListener("click", async () => {
 
 // ---------- Khởi tạo ----------
 
-(async function init() {
+async function refresh() {
   await loadSettings();
+  await renderPending();
   await renderChannelList();
+}
+
+(async function init() {
+  await refresh();
   if (!isOAuthConfigured()) {
     loadSubsBtn.title = "Cần cấu hình OAuth client ID trước — xem docs/OAUTH-SETUP.md";
     setMsg(subsMsg, "Tính năng này cần OAuth client ID (xem docs/OAUTH-SETUP.md).", "");
   }
 })();
+
+// Cập nhật popup khi service worker ghi trạng thái mới trong lúc popup đang mở.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+  if (changes.pending || changes.status || changes.channels) refresh();
+});

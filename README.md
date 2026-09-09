@@ -6,6 +6,10 @@ Extension Chrome: chọn các kênh YouTube muốn theo dõi, extension tự đ�
 - Mở 1 tab mới đến video đó (tối đa 3 tab mỗi vòng kiểm tra)
 - Hiện thông báo desktop kèm tiêu đề video
 
+**Bắt đúng lúc livestream lên sóng.** Kênh lên lịch stream trước cả tuần thì extension
+không mở tab ngay — nó ghi vào danh sách chờ và canh, rồi mở tab **trong vòng 30 giây**
+kể từ lúc stream thực sự bắt đầu phát.
+
 Có 2 cách thêm kênh vào danh sách theo dõi:
 
 1. Dán URL kênh / `@handle` / tên kênh vào ô "Thêm kênh theo dõi" — chỉ cần API key
@@ -21,9 +25,17 @@ Repo chứa hai thứ tách bạch, mỗi thứ có vòng đời triển khai ri
 ```
 extension/          Mã nguồn Chrome extension → nộp Chrome Web Store
 ├── manifest.json
-├── background.js       service worker: hẹn giờ, gọi API, mở tab
+├── background.js       service worker: hai vòng lặp hẹn giờ, mở tab
+├── lib/
+│   ├── rss.js          parse RSS feed của kênh
+│   └── decide.js       logic phân loại và quyết định (được test)
 ├── popup.html/js/css   giao diện quản lý kênh
 └── icons/
+
+tests/              test chạy bằng `node --test`, không nằm trong bản nộp Store
+├── rss.test.js
+├── decide.test.js
+└── fixtures/
 
 web/                Landing page + chính sách bảo mật → deploy Cloudflare
 ├── index.html
@@ -82,24 +94,54 @@ vẫn đủ dùng, và popup sẽ hiện nhắc nhở thay vì báo lỗi khó h
 
 ## Cách hoạt động
 
-- `background.js` chạy nền (service worker), dùng `chrome.alarms` kiểm tra theo chu kỳ
-- Với mỗi kênh, gọi API lấy playlist "uploads" rồi so video mới nhất với mốc đã lưu
-- Lần đầu thêm kênh, extension **chốt mốc ngay** (video mới nhất hiện tại) và không mở tab —
-  tránh mở hàng loạt tab cho video cũ. Từ đó về sau, có video mới hơn mốc thì mới mở tab
-- Mỗi vòng kiểm tra mở **tối đa 3 tab**; kênh có video mới ngoài giới hạn đó vẫn được báo
-  notification. Giới hạn này tránh việc bung hàng chục tab khi máy tắt lâu ngày
-- Bấm **"Kiểm tra ngay"** trong popup để chạy ngay thay vì chờ hết chu kỳ
+Hai vòng lặp chạy độc lập trong service worker:
+
+**Vòng 1 — phát hiện video mới (mặc định 60 giây)**
+Tải RSS feed `youtube.com/feeds/videos.xml?channel_id=…` của từng kênh. Feed này **miễn phí,
+không cần API key và không tính vào quota**, nên theo dõi bao nhiêu kênh cũng được. Dùng
+`If-None-Match` nên phần lớn lần gọi trả 304 rỗng. Video ID chưa từng thấy → đẩy vào hàng chờ.
+
+**Vòng 2 — theo dõi trạng thái live (mặc định 30 giây)**
+Gom toàn bộ ID đang chờ vào **một** lệnh `videos.list` (1 unit, tối đa 50 ID mỗi lần):
+
+| Trạng thái | Hành động |
+|---|---|
+| Video thường | Mở tab (nếu kênh đặt "Mọi video") |
+| Livestream **đang phát** | **Mở tab ngay** + thông báo 🔴 |
+| Livestream **mới lên lịch** | Giữ trong hàng chờ, canh tiếp |
+| Video bị xoá/ẩn | Bỏ khỏi hàng chờ |
+
+Vì sao phải có vòng 2: livestream xuất hiện trong RSS **ngay từ lúc được lên lịch**, rất lâu
+trước khi lên sóng. Không cơ chế push nào — kể cả WebSub/PubSubHubbub — báo thời điểm chuyển
+sang live, nên bắt buộc phải poll trạng thái video. Mở tab lúc thấy trong feed sẽ chỉ mở vào
+màn hình đếm ngược.
+
+**Quota:** khi hàng chờ rỗng thì vòng 2 không gọi API lần nào. Thực tế phần lớn thời gian tốn
+**0 unit**; trường hợp xấu nhất ~2.880 unit/ngày, **không phụ thuộc số kênh** (hạn mức 10.000).
+Stream lên lịch còn xa thì chỉ kiểm tra mỗi 5 phút, chỉ siết xuống 30 giây khi sắp tới giờ.
+
+**Chế độ theo từng kênh:** mỗi kênh chọn *Mọi video* hoặc *Chỉ livestream* trong popup.
+
+**Không có API key?** Vẫn chạy được — vòng 1 hoạt động bình thường, chỉ là không phân biệt
+được livestream đã lên sóng hay chưa. Thêm kênh bằng URL, `@handle` hoặc `UC…` đều được.
+
+**Giới hạn Chrome:** `chrome.alarms` không cho chạy dày hơn 30 giây với extension đã đóng gói.
 
 ## Phát triển
 
 ```bash
+npm test                      # chạy test (node --test, không cần cài gì thêm)
 ./scripts/pack-extension.sh   # tạo dist/*.zip để nộp Web Store
 ./scripts/fetch-fonts.sh      # tải lại font cho web/ (chỉ khi đổi bộ font)
 npx wrangler deploy           # deploy web/ thủ công lên Cloudflare
 ```
 
-Mỗi lần push lên `main`, CI tự kiểm tra manifest, cú pháp JS, `<meta charset>` của các trang
-web, và build sẵn file zip (tải ở tab **Actions** → artifact `extension-zip`).
+Mỗi lần push lên `main`, CI chạy test, kiểm tra manifest, cú pháp JS, `<meta charset>` của các
+trang web, và build sẵn file zip (tải ở tab **Actions** → artifact `extension-zip`).
+
+Logic thuần nằm ở `extension/lib/` để test được bằng Node mà không cần môi trường Chrome.
+Fixture là feed RSS thật — trong đó có một lỗi của chính YouTube: thẻ `<yt:channelId>` ở cấp
+feed bị thiếu tiền tố `UC`, nên parser phải lấy ID từ `<link>` thay vì tin thẻ đó.
 
 ## Xử lý sự cố
 

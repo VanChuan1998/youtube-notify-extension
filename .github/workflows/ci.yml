@@ -29,9 +29,12 @@ jobs:
 
       - name: Kiểm tra cú pháp JavaScript
         run: |
-          for f in extension/*.js; do
+          for f in extension/*.js extension/lib/*.js; do
             node --check "$f"
           done
+
+      - name: Chạy test
+        run: npm test
 
       - name: Kiểm tra cú pháp shell script
         run: |
@@ -68,6 +71,21 @@ jobs:
               print("::error::thiếu file font: " + ", ".join(missing))
               sys.exit(1)
           print(f"OK — {len(re.findall(r'@font-face', css))} khối @font-face, đủ file")
+          PY
+
+      - name: Service worker dùng import phải khai báo type module
+        run: |
+          python3 - <<'PY'
+          import json, sys, glob, re
+          m = json.load(open("extension/manifest.json"))
+          uses_import = any(
+              re.search(r"^\s*import\s", open(f, encoding="utf-8").read(), re.M)
+              for f in ["extension/background.js"]
+          )
+          if uses_import and m.get("background", {}).get("type") != "module":
+              print("::error::background.js dùng import nhưng manifest thiếu background.type=module")
+              sys.exit(1)
+          print("OK")
           PY
 
       - name: Kiểm tra cấu hình wrangler

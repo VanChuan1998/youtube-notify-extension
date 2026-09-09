@@ -32,6 +32,12 @@ if grep -q "DÁN_OAUTH_CLIENT_ID" "$SRC_DIR/manifest.json"; then
   echo "          sẽ không dùng được. Xem docs/OAUTH-SETUP.md." >&2
 fi
 
+# background.js import từ lib/ — thiếu thư mục này thì extension chết ngay khi load.
+if [ ! -d "$SRC_DIR/lib" ]; then
+  echo "LỖI: thiếu $SRC_DIR/lib/" >&2
+  exit 1
+fi
+
 mkdir -p "$OUT_DIR"
 rm -f "$OUT_FILE"
 

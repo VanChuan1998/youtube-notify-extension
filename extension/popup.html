@@ -10,16 +10,50 @@
     <h1>🔔 Kênh YouTube theo dõi</h1>
   </header>
 
-  <section id="settingsSection" class="card">
-    <h2>Cấu hình</h2>
-    <label for="apiKeyInput">YouTube Data API key</label>
+  <section class="card">
+    <h2>Thêm kênh theo dõi</h2>
     <div class="row">
-      <input type="password" id="apiKeyInput" placeholder="Dán API key (AIza...)" />
+      <input type="text" id="channelInput" placeholder="URL kênh, @handle, hoặc UC..." />
+      <button id="addChannelBtn">Thêm</button>
+    </div>
+    <p id="addMsg" class="status"></p>
+  </section>
+
+  <section class="card" id="pendingCard" style="display:none;">
+    <h2>⏳ Đang chờ lên sóng</h2>
+    <div id="pendingList" class="channel-list"></div>
+    <p class="muted small">Extension kiểm tra mỗi <span id="liveEvery">30</span> giây và mở tab
+      ngay khi stream bắt đầu phát.</p>
+  </section>
+
+  <section class="card">
+    <h2>Danh sách kênh đang theo dõi</h2>
+    <div id="channelList" class="channel-list"></div>
+    <p id="emptyMsg" class="muted" style="display:none;">Chưa có kênh nào. Thêm kênh ở trên.</p>
+  </section>
+
+  <section class="card">
+    <h2>Cấu hình</h2>
+
+    <label for="apiKeyInput">YouTube Data API key <span class="muted">(tuỳ chọn)</span></label>
+    <div class="row">
+      <input type="password" id="apiKeyInput" placeholder="AIza... — để trống vẫn dùng được" />
       <button id="toggleKeyVisibility" class="secondary" title="Hiện/ẩn">👁</button>
     </div>
+    <p class="muted small">Không có key: vẫn theo dõi video mới qua RSS (miễn phí), nhưng
+      <strong>không phân biệt được livestream đã lên sóng hay mới lên lịch</strong>.</p>
 
-    <label for="intervalInput">Chu kỳ kiểm tra (phút)</label>
-    <input type="number" id="intervalInput" min="1" max="120" value="10" />
+    <div class="row">
+      <div class="field">
+        <label for="discoverInput">Quét kênh mỗi (giây)</label>
+        <input type="number" id="discoverInput" min="30" max="3600" step="10" value="60" />
+      </div>
+      <div class="field">
+        <label for="liveCheckInput">Kiểm tra live mỗi (giây)</label>
+        <input type="number" id="liveCheckInput" min="30" max="600" step="10" value="30" />
+      </div>
+    </div>
+    <p class="muted small">Tối thiểu 30 giây — giới hạn của Chrome.</p>
 
     <div class="row">
       <button id="saveSettingsBtn">Lưu cấu hình</button>
@@ -29,33 +63,16 @@
   </section>
 
   <section class="card">
-    <h2>Thêm kênh theo dõi</h2>
-    <div class="row">
-      <input type="text" id="channelInput" placeholder="Dán URL kênh, @handle, hoặc tên kênh" />
-      <button id="addChannelBtn">Thêm</button>
-    </div>
-    <p id="addMsg" class="status"></p>
-  </section>
-
-  <section class="card">
-    <div class="row space-between">
-      <h2>Lấy từ kênh đã đăng ký (Subscriptions)</h2>
-    </div>
+    <h2>Lấy từ kênh đã đăng ký (Subscriptions)</h2>
     <button id="loadSubsBtn" class="secondary full-width">Đăng nhập Google &amp; tải danh sách đã subscribe</button>
     <p id="subsMsg" class="status"></p>
     <div id="subsList" class="channel-list"></div>
-  </section>
-
-  <section class="card">
-    <h2>Danh sách kênh đang theo dõi</h2>
-    <div id="channelList" class="channel-list"></div>
-    <p id="emptyMsg" class="muted" style="display:none;">Chưa có kênh nào. Thêm kênh ở trên.</p>
   </section>
 
   <footer>
     <span id="lastCheckInfo" class="muted"></span>
   </footer>
 
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>
