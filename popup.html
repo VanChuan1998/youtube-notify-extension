@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>YouTube Kênh Yêu Thích</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <h1>🔔 Kênh YouTube theo dõi</h1>
+  </header>
+
+  <section id="settingsSection" class="card">
+    <h2>Cấu hình</h2>
+    <label for="apiKeyInput">YouTube Data API key</label>
+    <div class="row">
+      <input type="password" id="apiKeyInput" placeholder="Dán API key (AIza...)" />
+      <button id="toggleKeyVisibility" class="secondary" title="Hiện/ẩn">👁</button>
+    </div>
+
+    <label for="intervalInput">Chu kỳ kiểm tra (phút)</label>
+    <input type="number" id="intervalInput" min="1" max="120" value="10" />
+
+    <div class="row">
+      <button id="saveSettingsBtn">Lưu cấu hình</button>
+      <button id="checkNowBtn" class="secondary">Kiểm tra ngay</button>
+    </div>
+    <p id="statusMsg" class="status"></p>
+  </section>
+
+  <section class="card">
+    <h2>Thêm kênh theo dõi</h2>
+    <div class="row">
+      <input type="text" id="channelInput" placeholder="Dán URL kênh, @handle, hoặc tên kênh" />
+      <button id="addChannelBtn">Thêm</button>
+    </div>
+    <p id="addMsg" class="status"></p>
+  </section>
+
+  <section class="card">
+    <div class="row space-between">
+      <h2>Lấy từ kênh đã đăng ký (Subscriptions)</h2>
+    </div>
+    <button id="loadSubsBtn" class="secondary full-width">Đăng nhập Google &amp; tải danh sách đã subscribe</button>
+    <p id="subsMsg" class="status"></p>
+    <div id="subsList" class="channel-list"></div>
+  </section>
+
+  <section class="card">
+    <h2>Danh sách kênh đang theo dõi</h2>
+    <div id="channelList" class="channel-list"></div>
+    <p id="emptyMsg" class="muted" style="display:none;">Chưa có kênh nào. Thêm kênh ở trên.</p>
+  </section>
+
+  <footer>
+    <span id="lastCheckInfo" class="muted"></span>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

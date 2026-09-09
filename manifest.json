@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Kênh Yêu Thích - Tự Mở Video Mới",
+  "version": "1.0.0",
+  "description": "Tự động kiểm tra video mới của các kênh YouTube đã chọn và mở tab mới đến video đó.",
+  "default_locale": "en",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications",
+    "tabs",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://www.googleapis.com/*"
+  ],
+  "oauth2": {
+    "client_id": "DÁN_OAUTH_CLIENT_ID_CỦA_BẠN_VÀO_ĐÂY.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/youtube.readonly"
+    ]
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArX/6qboRC+Fywvrbswit1TfKSMIwz2Sl5MyHHLPQSQnesVkiq0Fq/7jkrBTi2xbwEnr6onj7KFy78uU/OvDQtih0w7A9cxCaAK2VlBlZN1fGjOo6WYDpCe3oyL8wqGD1AzZ/UL3EjrgTBsavbspxRYPYVKq+h3+BjrMJLlVE7Hk1CqS2n/NTpqD7PAoQgxI+BRU17BI9K1NMYkqgqF+gg4ENRs3XysyKS9jbjtFCLog9PO11c70WL/JRdiX6uM0ZyKHiAN+z+bHDHyouKEfI+7vBW41seyLYupMZxyLr1ij3oN0/Sb/yktr3C26am7jXzpc0A+TxqdZA2PIQh/JVLwIDAQAB"
+}
