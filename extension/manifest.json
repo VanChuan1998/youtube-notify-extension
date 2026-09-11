@@ -32,7 +32,7 @@
     "https://www.youtube.com/*"
   ],
   "oauth2": {
-    "client_id": "DÁN_OAUTH_CLIENT_ID_CỦA_BẠN_VÀO_ĐÂY.apps.googleusercontent.com",
+    "client_id": "736665623723-0p1op02c399h9gvceidjjlcdb1hh6kjg.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/youtube.readonly"
     ]
