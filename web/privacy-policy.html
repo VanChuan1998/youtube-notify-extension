@@ -216,48 +216,85 @@
 
   <section class="lang active" id="vi">
     <p>"YouTube Kênh Yêu Thích" (sau đây gọi là "Extension") là tiện ích mở rộng Chrome giúp bạn
-    theo dõi video mới từ các kênh YouTube bạn tự chọn. Extension được phát triển và duy trì bởi
-    một cá nhân, không thuộc một công ty hay tổ chức nào.</p>
+    theo dõi video mới và livestream từ các kênh YouTube bạn tự chọn. Extension được phát triển và
+    duy trì bởi một cá nhân, không thuộc một công ty hay tổ chức nào.</p>
 
-    <h2>Dữ liệu extension truy cập</h2>
+    <h2>Extension kết nối tới đâu</h2>
+    <p>Extension <strong>không có máy chủ backend</strong>. Nó chỉ gửi yêu cầu tới hai địa chỉ, cả
+    hai đều thuộc Google/YouTube:</p>
     <table>
-      <tr><th>Loại dữ liệu</th><th>Mục đích</th><th>Lưu ở đâu</th></tr>
+      <tr><th>Địa chỉ</th><th>Khi nào</th><th>Gửi gì đi</th></tr>
       <tr>
-        <td>API key YouTube Data API do bạn cung cấp</td>
-        <td>Gọi YouTube Data API để kiểm tra video mới nhất của kênh</td>
-        <td>Chỉ trong <code>chrome.storage.local</code> trên máy bạn</td>
+        <td><code>youtube.com/feeds/videos.xml</code></td>
+        <td>Định kỳ (mặc định 60 giây) cho mỗi kênh bạn theo dõi</td>
+        <td>ID kênh cần đọc. Không kèm danh tính, không kèm API key.</td>
       </tr>
       <tr>
-        <td>Danh sách kênh bạn chọn theo dõi (ID, tên, ảnh đại diện kênh)</td>
-        <td>Hiển thị danh sách và so sánh video mới</td>
-        <td>Chỉ trong <code>chrome.storage.local</code> trên máy bạn</td>
+        <td><code>youtube.com/@…</code> hoặc <code>/channel/…</code></td>
+        <td>Một lần duy nhất, khi bạn thêm kênh bằng <code>@handle</code></td>
+        <td>Chỉ là một lượt tải trang kênh công khai, để lấy channel ID.</td>
       </tr>
       <tr>
-        <td>Token OAuth Google (nếu bạn dùng nút "tải danh sách đã subscribe")</td>
-        <td>Đọc danh sách kênh bạn đã đăng ký trên YouTube (chỉ đọc)</td>
-        <td>Quản lý bởi Chrome (<code>chrome.identity</code>), extension không lưu lại token</td>
+        <td><code>googleapis.com/youtube/v3</code></td>
+        <td>Chỉ khi bạn đã nhập API key, và chỉ khi có video đang chờ phân loại</td>
+        <td>API key của bạn và danh sách ID video cần kiểm tra trạng thái.</td>
+      </tr>
+    </table>
+
+    <p>Như mọi yêu cầu mạng khác, các kết nối này để lộ địa chỉ IP của bạn cho Google — giống hệt
+    việc bạn tự mở YouTube trong trình duyệt. Extension không thêm bất kỳ định danh nào của riêng nó.</p>
+
+    <h2>Dữ liệu extension lưu trên máy bạn</h2>
+    <p>Toàn bộ nằm trong <code>chrome.storage.local</code>, không rời khỏi trình duyệt của bạn:</p>
+    <table>
+      <tr><th>Loại dữ liệu</th><th>Mục đích</th></tr>
+      <tr>
+        <td>API key YouTube Data API <em>(tuỳ chọn — không nhập vẫn dùng được)</em></td>
+        <td>Phân biệt livestream đã lên sóng hay mới lên lịch. Không có key thì extension vẫn theo dõi video mới qua RSS công khai.</td>
+      </tr>
+      <tr>
+        <td>Danh sách kênh theo dõi: ID, tên, ảnh đại diện, chế độ (mọi video / chỉ livestream)</td>
+        <td>Hiển thị danh sách và quyết định khi nào mở tab</td>
+      </tr>
+      <tr>
+        <td>ID của khoảng 40 video gần nhất mỗi kênh</td>
+        <td>Nhận biết video nào là mới, tránh mở lại tab cho video cũ</td>
+      </tr>
+      <tr>
+        <td>Hàng chờ livestream sắp lên sóng: ID video, tiêu đề, giờ dự kiến phát</td>
+        <td>Canh để mở tab đúng lúc stream bắt đầu</td>
+      </tr>
+      <tr>
+        <td>ETag / Last-Modified của RSS feed</td>
+        <td>Chỉ tải lại feed khi có thay đổi, tiết kiệm băng thông</td>
+      </tr>
+      <tr>
+        <td>Token OAuth Google <em>(chỉ khi bạn bấm "tải danh sách đã subscribe")</em></td>
+        <td>Đọc danh sách kênh bạn đã đăng ký. Token do Chrome quản lý (<code>chrome.identity</code>), extension không lưu lại.</td>
       </tr>
     </table>
 
     <div class="callout">
-      Extension <strong>không gửi bất kỳ dữ liệu nào của bạn</strong> đến máy chủ của nhà phát triển
-      hay bất kỳ bên thứ ba nào ngoài Google (để gọi YouTube Data API). Toàn bộ dữ liệu cấu hình
-      chỉ lưu cục bộ trên trình duyệt của bạn.
+      Extension <strong>không gửi bất kỳ dữ liệu nào của bạn</strong> tới nhà phát triển hay bất kỳ
+      bên thứ ba nào. Không có analytics, không có telemetry, không có tài khoản. Lịch sử duyệt web,
+      nội dung trang, cookie — extension không đọc và không có quyền đọc.
     </div>
 
     <h2>Quyền (permissions) và lý do cần dùng</h2>
     <ul>
-      <li><code>storage</code> — lưu API key, danh sách kênh và cài đặt ngay trên máy bạn.</li>
-      <li><code>alarms</code> — hẹn giờ kiểm tra video mới định kỳ.</li>
-      <li><code>notifications</code> — hiện thông báo khi có video mới.</li>
-      <li><code>tabs</code> — mở tab mới đến video khi phát hiện video mới.</li>
-      <li><code>identity</code> — đăng nhập Google để đọc danh sách kênh bạn đã subscribe (tuỳ chọn, chỉ khi bạn bấm nút này).</li>
-      <li><code>host_permissions: googleapis.com</code> — gọi YouTube Data API v3.</li>
+      <li><code>storage</code> — lưu cấu hình và danh sách kênh ngay trên máy bạn.</li>
+      <li><code>alarms</code> — hẹn giờ hai vòng kiểm tra: quét kênh và canh livestream.</li>
+      <li><code>notifications</code> — hiện thông báo khi có video mới hoặc stream lên sóng.</li>
+      <li><code>tabs</code> — mở tab mới đến video. Extension chỉ <em>tạo</em> tab, không đọc nội dung hay lịch sử các tab khác.</li>
+      <li><code>identity</code> — đăng nhập Google để đọc danh sách kênh đã subscribe (tuỳ chọn, chỉ khi bạn bấm nút này).</li>
+      <li><code>host_permissions: youtube.com</code> — tải RSS feed công khai của kênh, và đọc trang kênh một lần khi bạn thêm bằng <code>@handle</code>.</li>
+      <li><code>host_permissions: googleapis.com</code> — gọi YouTube Data API v3 để kiểm tra trạng thái livestream (chỉ khi bạn đã nhập API key).</li>
     </ul>
 
     <h2>Chia sẻ và bán dữ liệu</h2>
     <p>Nhà phát triển không thu thập, không bán, không chia sẻ dữ liệu cá nhân của người dùng cho
-    bất kỳ bên nào. Extension không có máy chủ backend riêng.</p>
+    bất kỳ bên nào. Extension không có máy chủ backend riêng, nên về mặt kỹ thuật cũng không có nơi
+    nào để dữ liệu của bạn được gửi tới.</p>
 
     <h2>Xoá dữ liệu</h2>
     <p>Bạn có thể xoá toàn bộ dữ liệu đã lưu bất cứ lúc nào bằng cách gỡ extension khỏi Chrome,
@@ -269,49 +306,85 @@
   </section>
 
   <section class="lang" id="en">
-    <p>"YouTube Kênh Yêu Thích" ("the Extension") is a Chrome extension that lets you track new
-    uploads from YouTube channels you choose. It is developed and maintained by an individual
+    <p>"YouTube Kênh Yêu Thích" ("the Extension") is a Chrome extension that tracks new uploads and
+    livestreams from YouTube channels you choose. It is developed and maintained by an individual
     developer, not a company.</p>
 
-    <h2>Data the extension accesses</h2>
+    <h2>Where the extension connects</h2>
+    <p>The Extension has <strong>no backend server</strong>. It only makes requests to two hosts,
+    both operated by Google/YouTube:</p>
     <table>
-      <tr><th>Data</th><th>Purpose</th><th>Storage</th></tr>
+      <tr><th>Host</th><th>When</th><th>What is sent</th></tr>
       <tr>
-        <td>Your own YouTube Data API key</td>
-        <td>Calls the YouTube Data API to check a channel's latest upload</td>
-        <td><code>chrome.storage.local</code> on your device only</td>
+        <td><code>youtube.com/feeds/videos.xml</code></td>
+        <td>Periodically (60 seconds by default) for each channel you watch</td>
+        <td>The channel ID to read. No identity, no API key.</td>
       </tr>
       <tr>
-        <td>List of channels you choose to watch (ID, title, thumbnail)</td>
-        <td>Displayed in the popup and used to detect new uploads</td>
-        <td><code>chrome.storage.local</code> on your device only</td>
+        <td><code>youtube.com/@…</code> or <code>/channel/…</code></td>
+        <td>Once, when you add a channel by <code>@handle</code></td>
+        <td>A single public channel page load, to resolve the channel ID.</td>
       </tr>
       <tr>
-        <td>Google OAuth token (only if you use "load my subscriptions")</td>
-        <td>Read-only access to your YouTube subscriptions list</td>
-        <td>Managed by Chrome's <code>chrome.identity</code> API; never stored by the extension</td>
+        <td><code>googleapis.com/youtube/v3</code></td>
+        <td>Only if you provided an API key, and only while videos await classification</td>
+        <td>Your API key and the video IDs whose live status is being checked.</td>
+      </tr>
+    </table>
+
+    <p>Like any network request, these expose your IP address to Google — exactly as opening
+    YouTube in your browser does. The Extension adds no identifier of its own.</p>
+
+    <h2>Data stored on your device</h2>
+    <p>Everything lives in <code>chrome.storage.local</code> and never leaves your browser:</p>
+    <table>
+      <tr><th>Data</th><th>Purpose</th></tr>
+      <tr>
+        <td>Your YouTube Data API key <em>(optional — the Extension works without one)</em></td>
+        <td>Distinguishes a livestream that is actually broadcasting from one merely scheduled. Without a key, new uploads are still tracked via the public RSS feed.</td>
+      </tr>
+      <tr>
+        <td>Channels you watch: ID, title, thumbnail, and per-channel mode (all videos / livestreams only)</td>
+        <td>Shown in the popup and used to decide when to open a tab</td>
+      </tr>
+      <tr>
+        <td>IDs of roughly the 40 most recent videos per channel</td>
+        <td>Tells new videos from old ones so an old video is never reopened</td>
+      </tr>
+      <tr>
+        <td>Queue of upcoming livestreams: video ID, title, scheduled start time</td>
+        <td>Lets the Extension open a tab the moment a stream actually goes live</td>
+      </tr>
+      <tr>
+        <td>RSS ETag / Last-Modified values</td>
+        <td>Re-downloads a feed only when it changed, saving bandwidth</td>
+      </tr>
+      <tr>
+        <td>Google OAuth token <em>(only if you use "load my subscriptions")</em></td>
+        <td>Read-only access to your subscriptions list. Managed by Chrome's <code>chrome.identity</code> API; never stored by the Extension.</td>
       </tr>
     </table>
 
     <div class="callout">
-      The Extension <strong>does not send your data</strong> to any developer-owned server or third
-      party other than Google (to call the YouTube Data API). All configuration stays local to your
-      browser.
+      The Extension <strong>sends none of your data</strong> to the developer or to any third party.
+      No analytics, no telemetry, no accounts. It does not read — and has no permission to read —
+      your browsing history, page contents, or cookies.
     </div>
 
     <h2>Permissions and why they're needed</h2>
     <ul>
-      <li><code>storage</code> — save your API key, channel list, and settings locally.</li>
-      <li><code>alarms</code> — schedule periodic checks for new uploads.</li>
-      <li><code>notifications</code> — show a desktop notification for new uploads.</li>
-      <li><code>tabs</code> — open a new tab to a newly detected video.</li>
+      <li><code>storage</code> — save your settings and channel list locally.</li>
+      <li><code>alarms</code> — schedule the two loops: channel scanning and livestream watching.</li>
+      <li><code>notifications</code> — show a desktop notification for a new video or a stream going live.</li>
+      <li><code>tabs</code> — open a new tab to a video. The Extension only <em>creates</em> tabs; it does not read other tabs' contents or history.</li>
       <li><code>identity</code> — optional Google sign-in to read your subscriptions list.</li>
-      <li><code>host_permissions: googleapis.com</code> — calls to the YouTube Data API v3.</li>
+      <li><code>host_permissions: youtube.com</code> — fetch public channel RSS feeds, and load a channel page once when you add it by <code>@handle</code>.</li>
+      <li><code>host_permissions: googleapis.com</code> — call the YouTube Data API v3 to check livestream status (only when you have provided an API key).</li>
     </ul>
 
     <h2>Data sharing and sale</h2>
-    <p>The developer does not collect, sell, or share user data with any third party. The
-    Extension has no backend server of its own.</p>
+    <p>The developer does not collect, sell, or share user data with any third party. The Extension
+    has no backend server of its own, so there is technically nowhere for your data to be sent.</p>
 
     <h2>Data deletion</h2>
     <p>You can remove all stored data at any time by uninstalling the extension, or by removing
