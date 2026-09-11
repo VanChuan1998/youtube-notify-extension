@@ -327,6 +327,9 @@ async function discoverNewVideos() {
         ch.lastError = "";
         continue;
       }
+      if (res.status === 404) {
+        throw new Error("Kênh bị YouTube chặn dữ liệu (404)");
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       ch.etag = res.headers.get("etag") || "";
@@ -598,8 +601,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               });
             }
             
-            const subs = await fetchSubscriptions(token);
-            sendResponse({ ok: true, subscriptions: subs });
+            const rawSubs = await fetchSubscriptions(token);
+            const subs = rawSubs.map(item => ({
+              id: item.snippet.resourceId.channelId,
+              title: item.snippet.title,
+              thumbnail: (item.snippet.thumbnails?.default || item.snippet.thumbnails?.medium || {}).url || ""
+            }));
+
+            const userInfoData = await fetchUserInfo(token);
+            let oauthUser = null;
+            if (userInfoData && userInfoData.length > 0) {
+              const profile = userInfoData[0].snippet;
+              oauthUser = {
+                name: profile.title,
+                picture: profile.thumbnails?.default?.url || ""
+              };
+            }
+            
+            await setStorage({ fetchedSubs: subs, oauthUser });
+            sendResponse({ ok: true, subs, oauthUser });
           } catch (err) {
             sendResponse({ ok: false, error: err.message || String(err) });
           }

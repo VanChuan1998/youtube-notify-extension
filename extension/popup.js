@@ -381,7 +381,7 @@ loadSubsBtn.addEventListener("click", async () => {
   loadSubsBtn.disabled = true;
   setMsg(subsMsg, "Đang mở cửa sổ đăng nhập Google...", "");
   
-  const forcePrompt = userInfoContainer.style.display === "none";
+  const forcePrompt = userInfoContainer.style.display === "none" ? "consent" : undefined;
   
   chrome.runtime.sendMessage({ type: "fetchSubscriptions", clientId: OAUTH_CLIENT_ID, prompt: forcePrompt }, async (response) => {
     if (chrome.runtime.lastError) {
