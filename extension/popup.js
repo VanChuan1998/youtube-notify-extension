@@ -272,7 +272,11 @@ async function renderChannelList() {
 async function renderPending() {
   const { pending, channels } = await getStorage({ pending: {}, channels: {} });
   const list = Object.values(pending || {}).sort(
-    (a, b) => Date.parse(a.scheduledStartTime || 0) - Date.parse(b.scheduledStartTime || 0)
+    (a, b) => {
+      const ta = a.scheduledStartTime ? Date.parse(a.scheduledStartTime) : Infinity;
+      const tb = b.scheduledStartTime ? Date.parse(b.scheduledStartTime) : Infinity;
+      return ta - tb;
+    }
   );
 
   pendingCard.style.display = list.length ? "block" : "none";
@@ -381,7 +385,11 @@ loadSubsBtn.addEventListener("click", async () => {
   loadSubsBtn.disabled = true;
   setMsg(subsMsg, "Đang mở cửa sổ đăng nhập Google...", "");
   
-  const forcePrompt = userInfoContainer.style.display === "none" ? "consent" : undefined;
+  // Nếu chưa đăng nhập LẦN NÀO hoặc token đã hết hạn → bắt buộc hiện màn hình chọn tài khoản.
+  const { oauthTokenExpires } = await getStorage({ oauthTokenExpires: 0 });
+  const isLoggedIn = userInfoContainer.style.display !== "none";
+  const isTokenValid = oauthTokenExpires && Date.now() < oauthTokenExpires;
+  const forcePrompt = (!isLoggedIn || !isTokenValid) ? "consent" : undefined;
   
   chrome.runtime.sendMessage({ type: "fetchSubscriptions", clientId: OAUTH_CLIENT_ID, prompt: forcePrompt }, async (response) => {
     if (chrome.runtime.lastError) {

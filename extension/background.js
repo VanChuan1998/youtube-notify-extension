@@ -105,8 +105,18 @@ async function updateBadge() {
 
 async function ensureAlarms() {
   const { discoverSeconds, liveCheckSeconds } = await getIntervals();
-  chrome.alarms.create(ALARM_DISCOVER, { periodInMinutes: discoverSeconds / 60 });
-  chrome.alarms.create(ALARM_LIVECHECK, { periodInMinutes: liveCheckSeconds / 60 });
+  // Dùng get() trước khi create() — nếu alarm đã tồn tại với đúng chu kì thì bỏ qua,
+  // tránh reset vòng đếm hiện tại khi popup mở lại.
+  const existing = await new Promise((r) => chrome.alarms.getAll(r));
+  const existingMap = Object.fromEntries(existing.map((a) => [a.name, a]));
+  const discoverMinutes = discoverSeconds / 60;
+  const liveMinutes = liveCheckSeconds / 60;
+  if (!existingMap[ALARM_DISCOVER] || Math.abs((existingMap[ALARM_DISCOVER].periodInMinutes || 0) - discoverMinutes) > 0.01) {
+    chrome.alarms.create(ALARM_DISCOVER, { periodInMinutes: discoverMinutes });
+  }
+  if (!existingMap[ALARM_LIVECHECK] || Math.abs((existingMap[ALARM_LIVECHECK].periodInMinutes || 0) - liveMinutes) > 0.01) {
+    chrome.alarms.create(ALARM_LIVECHECK, { periodInMinutes: liveMinutes });
+  }
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -138,7 +148,14 @@ async function apiFetch(path, params, keyOrToken) {
   }
 
   const res = await fetch(url.toString(), { headers });
-  const data = await res.json();
+  // Đọc text trước — một số HTTP error (như 401, 503) có thể trả HTML không phải JSON.
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`HTTP ${res.status}: phản hồi không phải JSON`);
+  }
   if (!res.ok) {
     throw new Error((data && data.error && data.error.message) || `HTTP ${res.status}`);
   }
@@ -203,6 +220,8 @@ async function fetchUserInfo(token) {
 async function fetchSubscriptions(token) {
   let items = [];
   let pageToken = "";
+  let pages = 0;
+  const MAX_PAGES = 20; // tối đa 1000 kênh (20 trang x 50) — tránh vòng lặp vô hạn nếu API trả nextPageToken liên tục
   do {
     const params = { part: "snippet", mine: "true", maxResults: "50" };
     if (pageToken) params.pageToken = pageToken;
@@ -211,7 +230,8 @@ async function fetchSubscriptions(token) {
       items.push(...data.items);
     }
     pageToken = data.nextPageToken || "";
-  } while (pageToken);
+    pages++;
+  } while (pageToken && pages < MAX_PAGES);
   return items;
 }
 
@@ -303,6 +323,33 @@ export async function resolveChannelInput(rawInput, apiKey) {
 
 // ---------- Vòng 1: phát hiện video mới qua RSS ----------
 
+// Fetch với retry — YouTube đôi khi trả 404/503 tạm thời do rate-limit.
+// Thử lại tối đa maxRetries lần trước khi bỏ cuộc.
+async function fetchWithRetry(url, options = {}, maxRetries = 2) {
+  let lastErr;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      // Exponential backoff: 1s, 2s — tránh hammer server
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+    try {
+      const res = await fetch(url, options);
+      // Chỉ retry với 404 và 5xx (lỗi phía server), không retry 4xx khác
+      if ((res.status === 404 || res.status >= 500) && attempt < maxRetries) {
+        lastErr = res;
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxRetries) continue;
+    }
+  }
+  // lastErr có thể là Response hoặc Error
+  if (lastErr && typeof lastErr.status === "number") return lastErr;
+  throw lastErr;
+}
+
 async function discoverNewVideos() {
   const channels = await getChannels();
   const watched = Object.values(channels).filter((c) => c.watched);
@@ -321,16 +368,27 @@ async function discoverNewVideos() {
       if (ch.etag) headers["If-None-Match"] = ch.etag;
       else if (ch.lastModified) headers["If-Modified-Since"] = ch.lastModified;
 
-      const res = await fetch(feedUrlForChannel(ch.id), { headers });
+      const res = await fetchWithRetry(feedUrlForChannel(ch.id), { headers });
 
       if (res.status === 304) {
         ch.lastError = "";
+        ch.consecutiveErrors = 0;
         continue;
       }
       if (res.status === 404) {
-        throw new Error("Kênh bị YouTube chặn dữ liệu (404)");
+        // Sau khi đã retry 2 lần vẫn 404 → đây mới là lỗi thật.
+        // Ghi nhận nhưng chỉ hiển thị sau 3 vòng liên tiếp — tránh báo sai khi YouTube chặn tạm.
+        ch.consecutiveErrors = (ch.consecutiveErrors || 0) + 1;
+        if (ch.consecutiveErrors >= 3) {
+          ch.lastError = "Đã thử lại nhưng YouTube vẫn chặn kênh này (404). Kênh có thể bị xóa hoặc khóa feed.";
+        } else {
+          ch.lastError = "";
+        }
+        continue;
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      ch.consecutiveErrors = 0;
 
       ch.etag = res.headers.get("etag") || "";
       ch.lastModified = res.headers.get("last-modified") || "";
@@ -368,6 +426,7 @@ async function discoverNewVideos() {
 
       ch.lastError = "";
     } catch (err) {
+      ch.consecutiveErrors = (ch.consecutiveErrors || 0) + 1;
       ch.lastError = err.message || String(err);
     }
   }
@@ -404,6 +463,8 @@ async function checkPendingVideos() {
   const apiKey = await getApiKey();
   const { oauthToken } = await getStorage({ oauthToken: "" });
 
+  const channels = await getChannels();
+
   // Chế độ RSS-only: không có key thì không phân biệt được live/upcoming.
   // Coi mọi video như video thường và xử lý theo mode của kênh.
   if (!apiKey && !oauthToken) {
@@ -428,13 +489,11 @@ async function checkPendingVideos() {
       await setStatus({ lastError: "", lastLiveCheckAt: now });
     } catch (err) {
       // Nếu scrape lỗi, fallback coi như video thường
-      await handleClassified(due.map((e) => ({ entry: e, state: "none" })), pending);
+      await handleClassified(due.map((e) => ({ entry: e, state: "none" })), pending, channels);
       await setStatus({ lastError: "Scrape lỗi: " + err.message, lastLiveCheckAt: now });
     }
     return;
   }
-
-  const channels = await getChannels();
   const classified = [];
 
   try {
@@ -480,6 +539,8 @@ async function checkPendingVideos() {
 
 // Mở tab / báo notification theo trạng thái và mode của kênh.
 async function handleClassified(classified, pending, channelsArg) {
+  // Không dùng channelsArg để ghi lại storage — nó là snapshot cũ.
+  // Chỉ dùng để đọc mode/title của kênh; tải lại mới nhất trước khi lưu.
   const channels = channelsArg || (await getChannels());
   let tabsOpened = 0;
 
@@ -496,11 +557,16 @@ async function handleClassified(classified, pending, channelsArg) {
 
     if (shouldOpenTab(state, mode)) {
       if (tabsOpened < MAX_TABS_PER_RUN) {
-        await chrome.tabs.create({
-          url: `https://www.youtube.com/watch?v=${entry.videoId}`,
-          active: false,
-        });
-        tabsOpened++;
+        try {
+          await chrome.tabs.create({
+            url: `https://www.youtube.com/watch?v=${entry.videoId}`,
+            active: false,
+          });
+          tabsOpened++;
+        } catch (tabErr) {
+          // Service worker có thể bị suspend lúc mở tab; ghi lỗi nhưng không dừng.
+          console.error("Mở tab thất bại:", tabErr);
+        }
       }
       notify(entry, state, ch);
     } else if (state !== "upcoming" && mode === "liveOnly") {
@@ -511,7 +577,8 @@ async function handleClassified(classified, pending, channelsArg) {
     delete pending[entry.videoId];
   }
 
-  await setStorage({ pending, channels });
+  // Chỉ lưu pending (truyền vào từ caller) — không ghi lại channels để tránh ghi è dữ liệu mới hơn.
+  await setStorage({ pending });
   await updateBadge();
 }
 
@@ -549,6 +616,7 @@ async function initChannelBaseline(channelId) {
   const videos = parseFeed(await res.text());
   ch.seenVideoIds = rememberSeen([], videos.map((v) => v.videoId));
   ch.initialized = true;
+  ch.consecutiveErrors = 0;
   ch.lastCheckedTitle = videos.length ? videos[0].title : "";
   ch.lastError = "";
   await setStorage({ channels });
