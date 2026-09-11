@@ -39,13 +39,28 @@ if [ ! -d "$SRC_DIR/lib" ]; then
 fi
 
 mkdir -p "$OUT_DIR"
-rm -f "$OUT_FILE"
+OUT_FILE_ABS="$(pwd)/$OUT_FILE"
+rm -f "$OUT_FILE_ABS"
 
-# -x loại rác của macOS; zip chạy từ trong extension/ để file nằm ở gốc archive,
-# đúng cấu trúc Chrome Web Store yêu cầu (manifest.json phải ở gốc zip).
-( cd "$SRC_DIR" && zip -rq "../$OUT_FILE" . -x ".DS_Store" -x "__MACOSX/*" )
+TMP_DIR=$(mktemp -d)
+cp -a "$SRC_DIR/." "$TMP_DIR/"
 
-echo "Đã tạo $OUT_FILE ($(du -h "$OUT_FILE" | cut -f1))"
+# Môi trường PRD: Xoá trường "key" khỏi manifest.json để nộp lên Store
+python3 -c "
+import json
+with open('$TMP_DIR/manifest.json', 'r') as f:
+    d = json.load(f)
+if 'key' in d:
+    del d['key']
+    print('Đã tự động xoá trường \"key\" khỏi manifest.json (Môi trường PRD)')
+with open('$TMP_DIR/manifest.json', 'w') as f:
+    json.dump(d, f, indent=2)
+"
+
+( cd "$TMP_DIR" && zip -rq "$OUT_FILE_ABS" . -x ".DS_Store" -x "__MACOSX/*" )
+rm -rf "$TMP_DIR"
+
+echo "Đã tạo $OUT_FILE ($(du -h "$OUT_FILE_ABS" | cut -f1))"
 echo
 echo "Nội dung:"
 unzip -l "$OUT_FILE" | awk 'NR>3 && $0 !~ /^ *-+/ && $0 !~ /files?$/ { print }'
