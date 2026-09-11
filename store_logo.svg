@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
+  <defs>
+    <linearGradient id="redGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF3A3A"/>
+      <stop offset="100%" stop-color="#D91616"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="300" height="300" rx="60" fill="#18181B"/>
+
+  <!-- YouTube-like Button -->
+  <rect x="50" y="85" width="200" height="130" rx="30" fill="url(#redGradient)" filter="url(#shadow)"/>
+  
+  <!-- Play Triangle -->
+  <polygon points="130,120 130,180 185,150" fill="#FFFFFF"/>
+
+  <!-- Notification Bell / Badge -->
+  <circle cx="230" cy="70" r="35" fill="#FFC800" filter="url(#shadow)"/>
+  <path d="M230 45 C 220 45, 212 53, 212 63 L 212 75 L 205 82 L 205 86 L 255 86 L 255 82 L 248 75 L 248 63 C 248 53, 240 45, 230 45 Z" fill="#222"/>
+  <path d="M222 88 C 222 93, 226 96, 230 96 C 234 96, 238 93, 238 88 Z" fill="#222"/>
+  <circle cx="230" cy="42" r="4" fill="#222"/>
+
+</svg>
