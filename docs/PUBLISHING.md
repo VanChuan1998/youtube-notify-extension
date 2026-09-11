@@ -47,7 +47,7 @@ subscribe" sẽ không dùng được với người khác.
 
 **Tên hiển thị (Title):**
 ```
-YouTube Kênh Yêu Thích — Tự Mở Video Mới
+Auto Mở Live Youtube
 ```
 
 **Mô tả ngắn (Summary, ≤132 ký tự):**

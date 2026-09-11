@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "YouTube Kênh Yêu Thích - Tự Mở Video Mới",
+  "name": "Auto Mở Live Youtube",
   "version": "1.1.0",
   "description": "Theo dõi kênh YouTube: tự mở tab ngay khi có video mới hoặc khi livestream bắt đầu phát.",
   "icons": {

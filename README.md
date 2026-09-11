@@ -1,4 +1,4 @@
-# YouTube Kênh Yêu Thích — Tự Mở Video Mới
+# Auto Mở Live Youtube
 
 Extension Chrome: chọn các kênh YouTube muốn theo dõi, extension tự động kiểm tra định kỳ
 (mặc định 10 phút/lần) qua YouTube Data API. Khi kênh đăng video mới, extension sẽ:
