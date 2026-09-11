@@ -9,18 +9,17 @@ Nếu chưa cấu hình, nút "Đăng nhập Google & tải danh sách đã subs
 
 ---
 
-## Bước 1 — Lấy Extension ID
+## Bước 1 — Lấy Redirect URI
+ 
+OAuth client mới sẽ là loại *Web Application*, và nó cần một **Redirect URI** để trả kết quả về cho extension.
+ 
+1. Mở `edge://extensions` (hoặc `chrome://extensions`).
+2. Bật **Developer mode** (góc trên bên phải).
+3. Bấm **Load unpacked**, chọn thư mục `extension/`.
+4. Mở popup của extension lên, nhìn xuống phần **Lấy từ kênh đã đăng ký (Subscriptions)**.
+5. Bạn sẽ thấy một dòng ghi **Redirect URI của bạn** (Ví dụ: `https://abcdefghijklmnopqrstuvwxyz123456.chromiumapp.org/`). Hãy copy chính xác đường link này.
 
-OAuth client loại *Chrome Extension* gắn với một Extension ID cố định.
-
-`extension/manifest.json` đã có sẵn trường `key`, nên ID **không đổi** giữa các lần tải lại — kể cả khi cài ở chế độ unpacked. Lấy ID như sau:
-
-1. Mở `chrome://extensions`
-2. Bật **Developer mode** (góc trên bên phải)
-3. Bấm **Load unpacked**, chọn thư mục `extension/`
-4. Copy chuỗi **ID** hiện dưới tên extension (32 chữ cái thường)
-
-> Đừng xoá trường `key` khỏi `manifest.json`. Xoá đi thì Extension ID sẽ đổi mỗi lần cài lại và OAuth client sẽ hết hiệu lực.
+> *Mẹo:* `extension/manifest.json` đã có sẵn trường `key` nên ID extension (và do đó Redirect URI) sẽ không đổi giữa các lần cài đặt. Đừng xóa trường `key` này.
 
 ## Bước 2 — Tạo Google Cloud project và bật API
 
@@ -41,24 +40,25 @@ OAuth client loại *Chrome Extension* gắn với một Extension ID cố đị
 > App ở trạng thái **Testing** chỉ dùng được với các tài khoản có trong danh sách Test users, và token hết hạn sau 7 ngày. Muốn dùng lâu dài cho nhiều người thì phải bấm **Publish app** và qua quy trình xác minh của Google — quy trình này mất vài tuần vì scope `youtube.readonly` bị Google xếp loại nhạy cảm. Dùng cá nhân thì cứ để **Testing**, thỉnh thoảng đăng nhập lại.
 
 ## Bước 4 — Tạo OAuth client ID
-
+ 
 1. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
-2. Application type: **Chrome Extension**
-3. Item ID: dán Extension ID lấy ở Bước 1
-4. Bấm **Create**, copy chuỗi client ID dạng `123456789-abcdef.apps.googleusercontent.com`
+2. Application type: chọn **Web application** (Ứng dụng web)
+3. Name: Tên tùy ý (Ví dụ: Edge Extension Client).
+4. Ở mục **Authorized redirect URIs**, bấm **ADD URI** rồi dán cái URL mà bạn vừa copy ở Bước 1 vào.
+5. Bấm **Create**, màn hình sẽ hiện lên **Client ID**. Hãy copy chuỗi Client ID (dạng `123456789-abcdef.apps.googleusercontent.com`).
 
 ## Bước 5 — Dán vào manifest
-
-Mở `extension/manifest.json`, thay giá trị placeholder:
-
+ 
+Mở `extension/manifest.json`, thay giá trị placeholder ở mục `google_oauth2`:
+ 
 ```json
-"oauth2": {
+"google_oauth2": {
   "client_id": "123456789-abcdef.apps.googleusercontent.com",
   "scopes": ["https://www.googleapis.com/auth/youtube.readonly"]
 }
 ```
-
-Quay lại `chrome://extensions`, bấm nút **tải lại** (↻) trên extension. Mở popup, bấm "Đăng nhập Google & tải danh sách đã subscribe".
+ 
+Quay lại trang quản lý Extensions của trình duyệt, bấm nút **tải lại** (↻) trên extension. Mở popup, bấm "Đăng nhập Google & tải danh sách đã subscribe". Giao diện đăng nhập Google sẽ hiện ra!
 
 ---
 

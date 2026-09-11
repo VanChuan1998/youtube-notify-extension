@@ -56,7 +56,7 @@ function setMsg(el, text, kind) {
 // client_id mặc định trong manifest là chỗ giữ chỗ; OAuth chỉ chạy sau khi người
 // dùng thay bằng client_id thật (xem docs/OAUTH-SETUP.md).
 function isOAuthConfigured() {
-  const oauth2 = chrome.runtime.getManifest().oauth2;
+  const oauth2 = chrome.runtime.getManifest().google_oauth2 || chrome.runtime.getManifest().oauth2;
   const id = (oauth2 && oauth2.client_id) || "";
   return !!id && id.endsWith(".apps.googleusercontent.com") && !/[^\x00-\x7F]/.test(id);
 }
@@ -312,13 +312,42 @@ async function renderPending() {
 
 function getAuthToken(interactive) {
   return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive }, (token) => {
-      if (chrome.runtime.lastError || !token) {
-        reject(new Error(chrome.runtime.lastError ? chrome.runtime.lastError.message : "Không lấy được token"));
-      } else {
-        resolve(token);
+    const manifest = chrome.runtime.getManifest();
+    const oauth2 = manifest.google_oauth2 || manifest.oauth2;
+    if (!oauth2 || !oauth2.client_id) {
+      return reject(new Error("Không tìm thấy cấu hình OAuth trong manifest."));
+    }
+
+    const clientId = oauth2.client_id;
+    const scopes = (oauth2.scopes || []).join(' ');
+    const redirectUrl = chrome.identity.getRedirectURL();
+
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('response_type', 'token');
+    authUrl.searchParams.set('redirect_uri', redirectUrl);
+    authUrl.searchParams.set('scope', scopes);
+    if (interactive) {
+      authUrl.searchParams.set('prompt', 'consent');
+    }
+
+    chrome.identity.launchWebAuthFlow(
+      { url: authUrl.toString(), interactive },
+      (responseUrl) => {
+        if (chrome.runtime.lastError || !responseUrl) {
+          reject(new Error(chrome.runtime.lastError ? chrome.runtime.lastError.message : "Đăng nhập bị hủy hoặc thất bại."));
+          return;
+        }
+        const url = new URL(responseUrl);
+        const params = new URLSearchParams(url.hash.substring(1));
+        const token = params.get('access_token');
+        if (token) {
+          resolve(token);
+        } else {
+          reject(new Error("Không tìm thấy access token trong kết quả trả về."));
+        }
       }
-    });
+    );
   });
 }
 
@@ -442,6 +471,11 @@ async function refresh() {
   if (!isOAuthConfigured()) {
     loadSubsBtn.title = "Cần cấu hình OAuth client ID trước — xem docs/OAUTH-SETUP.md";
     setMsg(subsMsg, "Tính năng này cần OAuth client ID (xem docs/OAUTH-SETUP.md).", "");
+    const redirectUriInfo = $("redirectUriInfo");
+    if (redirectUriInfo) {
+      redirectUriInfo.style.display = "block";
+      redirectUriInfo.innerHTML = `<strong>Redirect URI của bạn:</strong><br>${chrome.identity.getRedirectURL()}`;
+    }
   }
 })();
 
