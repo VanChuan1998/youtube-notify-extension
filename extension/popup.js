@@ -41,6 +41,10 @@ function setStorage(items) {
   return new Promise((resolve) => chrome.storage.local.set(items, resolve));
 }
 
+function getSessionStorage(keys) {
+  return new Promise((resolve) => chrome.storage.session.get(keys, resolve));
+}
+
 function sendMessage(msg) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(msg, (res) => {
@@ -166,6 +170,7 @@ async function addChannel() {
     etag: "",
     lastModified: "",
     addedAt: Date.now(),
+    source: "manual",
   };
   await setStorage({ channels });
 
@@ -358,6 +363,7 @@ async function renderSubsList(subs) {
         etag: "",
         lastModified: "",
         addedAt: Date.now(),
+        source: "subscription",
       };
       await setStorage({ channels: latest });
       addBtn.textContent = "Đã thêm";
@@ -385,11 +391,10 @@ loadSubsBtn.addEventListener("click", async () => {
   loadSubsBtn.disabled = true;
   setMsg(subsMsg, "Đang mở cửa sổ đăng nhập Google...", "");
   
-  // Nếu chưa đăng nhập LẦN NÀO hoặc token đã hết hạn → bắt buộc hiện màn hình chọn tài khoản.
-  const { oauthTokenExpires } = await getStorage({ oauthTokenExpires: 0 });
+  // Lần kết nối đầu tiên hiển thị consent rõ ràng. Access token được background
+  // giữ trong chrome.storage.session và tự lấy lại khi cần.
   const isLoggedIn = userInfoContainer.style.display !== "none";
-  const isTokenValid = oauthTokenExpires && Date.now() < oauthTokenExpires;
-  const forcePrompt = (!isLoggedIn || !isTokenValid) ? "consent" : undefined;
+  const forcePrompt = !isLoggedIn ? "consent" : undefined;
   
   chrome.runtime.sendMessage({ type: "fetchSubscriptions", clientId: OAUTH_CLIENT_ID, prompt: forcePrompt }, async (response) => {
     if (chrome.runtime.lastError) {
@@ -408,8 +413,8 @@ loadSubsBtn.addEventListener("click", async () => {
       if (response.oauthUser) {
         userInfoContainer.style.display = "flex";
         userAvatar.src = response.oauthUser.picture || "";
-        userName.textContent = response.oauthUser.name || "Người dùng Google";
-        loadSubsBtn.textContent = "Làm mới danh sách kênh (Đã kết nối)";
+        userName.textContent = response.oauthUser.name || "Kênh YouTube";
+        loadSubsBtn.textContent = "Làm mới kênh đã đăng ký (Đã kết nối)";
       }
       
       await renderChannelList(); // Gọi renderChannelList để cập nhật UI nếu bị xoá các kênh cũ do đổi tài khoản
@@ -420,12 +425,22 @@ loadSubsBtn.addEventListener("click", async () => {
 });
 
 logoutBtn.addEventListener("click", async () => {
-  if (confirm("Đăng xuất sẽ xoá danh sách kênh đang hiển thị. Bạn có chắc chắn muốn đăng xuất?")) {
-    await chrome.storage.local.remove(['oauthUser', 'fetchedSubs', 'oauthToken', 'oauthTokenExpires']);
-    userInfoContainer.style.display = "none";
-    loadSubsBtn.textContent = "Đăng nhập Google & tải danh sách đã subscribe";
-    subsList.innerHTML = "";
-    setMsg(subsMsg, "Đã đăng xuất.", "ok");
+  if (!confirm("Ngắt kết nối sẽ thu hồi quyền OAuth khi có thể, xoá dữ liệu tải từ tài khoản Google trong phiên này và xoá các kênh đã thêm trực tiếp từ danh sách subscriptions. Tiếp tục?")) return;
+
+  logoutBtn.disabled = true;
+  setMsg(subsMsg, "Đang ngắt kết nối và thu hồi quyền...", "");
+  const res = await sendMessage({ type: "revokeOAuth", clientId: OAUTH_CLIENT_ID });
+  logoutBtn.disabled = false;
+
+  userInfoContainer.style.display = "none";
+  loadSubsBtn.textContent = "Kết nối Google & tải kênh đã đăng ký";
+  subsList.innerHTML = "";
+  await renderChannelList();
+
+  if (res && res.ok) {
+    setMsg(subsMsg, res.warning ? `Đã xoá dữ liệu cục bộ. ${res.warning}` : "Đã ngắt kết nối Google và xoá dữ liệu OAuth cục bộ.", res.warning ? "" : "ok");
+  } else {
+    setMsg(subsMsg, "Lỗi khi ngắt kết nối: " + (res && res.error ? res.error : "Không rõ lỗi"), "error");
   }
 });
 
@@ -436,22 +451,22 @@ async function refresh() {
   await renderPending();
   await renderChannelList();
   
-  const { fetchedSubs, oauthUser } = await getStorage({ fetchedSubs: null, oauthUser: null });
+  const { fetchedSubs, oauthUser } = await getSessionStorage({ fetchedSubs: null, oauthUser: null });
   
   if (oauthUser) {
     userInfoContainer.style.display = "flex";
     userAvatar.src = oauthUser.picture || "";
-    userName.textContent = oauthUser.name || "Người dùng Google";
+    userName.textContent = oauthUser.name || "Kênh YouTube";
   } else {
     userInfoContainer.style.display = "none";
   }
  
   if (fetchedSubs) {
-    loadSubsBtn.textContent = "Làm mới danh sách kênh (Đã kết nối)";
+    loadSubsBtn.textContent = "Làm mới kênh đã đăng ký (Đã kết nối)";
     setMsg(subsMsg, `Đã tải ${fetchedSubs.length} kênh ở lần trước.`, "ok");
     await renderSubsList(fetchedSubs);
   } else {
-    loadSubsBtn.textContent = "Đăng nhập Google & tải danh sách đã subscribe";
+    loadSubsBtn.textContent = "Kết nối Google & tải kênh đã đăng ký";
   }
 }
 

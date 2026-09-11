@@ -1,87 +1,159 @@
-# Cấu hình OAuth để tải danh sách kênh đã đăng ký
+# Google OAuth, YouTube Data API và OAuth Verification
 
-Extension có hai cách thêm kênh:
+Tài liệu này mô tả **implementation hiện tại** của Auto Mở Live và các giá trị cần đồng bộ trong Google Cloud.
 
-- **Thêm thủ công** — dán URL kênh, `@handle` hoặc tên kênh. Chỉ cần **API key**, không cần OAuth. Dùng được ngay.
-- **Tải từ Subscriptions** — lấy toàn bộ kênh bạn đã đăng ký trên tài khoản Google. Cần **OAuth client ID**, cấu hình theo hướng dẫn dưới đây.
+## 1. Hai loại credential độc lập
 
-Nếu chưa cấu hình, nút "Đăng nhập Google & tải danh sách đã subscribe" sẽ báo nhắc thay vì lỗi khó hiểu.
+### YouTube Data API key — tuỳ chọn
 
----
+API key do người dùng tự nhập trong popup. Nó cho phép:
 
-## Bước 1 — Lấy Redirect URI
- 
-OAuth client mới sẽ là loại *Web Application*, và nó cần một **Redirect URI** để trả kết quả về cho extension.
- 
-1. Mở `edge://extensions` (hoặc `chrome://extensions`).
-2. Bật **Developer mode** (góc trên bên phải).
-3. Bấm **Load unpacked**, chọn thư mục `extension/`.
-4. Mở popup của extension lên, nhìn xuống phần **Lấy từ kênh đã đăng ký (Subscriptions)**.
-5. Bạn sẽ thấy một dòng ghi **Redirect URI của bạn** (Ví dụ: `https://abcdefghijklmnopqrstuvwxyz123456.chromiumapp.org/`). Hãy copy chính xác đường link này.
+- tra cứu channel từ `@handle`, username hoặc tên;
+- gọi `videos.list` để phân loại video thường / live / upcoming.
 
-> *Mẹo:* `extension/manifest.json` đã có sẵn trường `key` nên ID extension (và do đó Redirect URI) sẽ không đổi giữa các lần cài đặt. Đừng xóa trường `key` này.
+Không có API key vẫn có thể thêm channel ID `UC...` trực tiếp và phát hiện ID video mới từ feed, nhưng extension sẽ không phân loại hàng chờ cho tới khi có API key hoặc OAuth session.
 
-## Bước 2 — Tạo Google Cloud project và bật API
+### Google OAuth — tuỳ chọn
 
-1. Vào https://console.cloud.google.com/projectcreate — tạo project mới (tên gì cũng được)
-2. Vào **APIs & Services → Library**, tìm **YouTube Data API v3**, bấm **Enable**
+OAuth chỉ bắt đầu khi người dùng bấm **Kết nối Google & tải kênh đã đăng ký**. Scope duy nhất:
 
-## Bước 3 — Cấu hình OAuth consent screen
-
-1. **APIs & Services → OAuth consent screen**
-2. User Type: chọn **External**
-3. Điền tên ứng dụng, email hỗ trợ, email liên hệ nhà phát triển
-4. Ở bước **Scopes**, bấm **Add or remove scopes**, thêm:
-   ```
-   https://www.googleapis.com/auth/youtube.readonly
-   ```
-5. Ở bước **Test users**, thêm chính địa chỉ Gmail của bạn
-
-> App ở trạng thái **Testing** chỉ dùng được với các tài khoản có trong danh sách Test users, và token hết hạn sau 7 ngày. Muốn dùng lâu dài cho nhiều người thì phải bấm **Publish app** và qua quy trình xác minh của Google — quy trình này mất vài tuần vì scope `youtube.readonly` bị Google xếp loại nhạy cảm. Dùng cá nhân thì cứ để **Testing**, thỉnh thoảng đăng nhập lại.
-
-## Bước 4 — Tạo OAuth client ID
- 
-1. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
-2. Application type: chọn **Web application** (Ứng dụng web)
-3. Name: Tên tùy ý (Ví dụ: Edge Extension Client).
-4. Ở mục **Authorized redirect URIs**, bấm **ADD URI** rồi dán cái URL mà bạn vừa copy ở Bước 1 vào.
-5. Bấm **Create**, màn hình sẽ hiện lên **Client ID**. Hãy copy chuỗi Client ID (dạng `123456789-abcdef.apps.googleusercontent.com`).
-
-## Bước 5 — Dán vào manifest
- 
-Mở `extension/manifest.json`, thay giá trị placeholder ở mục `google_oauth2`:
- 
-```json
-"google_oauth2": {
-  "client_id": "123456789-abcdef.apps.googleusercontent.com",
-  "scopes": ["https://www.googleapis.com/auth/youtube.readonly"]
-}
+```text
+https://www.googleapis.com/auth/youtube.readonly
 ```
- 
-Quay lại trang quản lý Extensions của trình duyệt, bấm nút **tải lại** (↻) trên extension. Mở popup, bấm "Đăng nhập Google & tải danh sách đã subscribe". Giao diện đăng nhập Google sẽ hiện ra!
 
----
+Extension dùng scope này để tải danh sách subscriptions, lấy thông tin cơ bản của kênh thuộc tài khoản và gọi YouTube Data API cho chức năng phân loại trong phiên hiện tại. Scope là chỉ đọc.
 
-## API key (bắt buộc, khác với OAuth)
+## 2. Implementation OAuth hiện tại
 
-API key dùng cho việc kiểm tra video mới — phần cốt lõi của extension, luôn cần có.
+Source hiện tại dùng:
 
-1. **APIs & Services → Credentials → Create Credentials → API key**
-2. Copy key (dạng `AIza...`)
-3. Mở popup extension, dán vào ô **YouTube Data API key**, bấm **Lưu cấu hình**
+```text
+chrome.identity.launchWebAuthFlow()
+response_type=token
+redirect URI = chrome.identity.getRedirectURL()
+```
 
-Nên bấm **Restrict key** và giới hạn key ở đúng **YouTube Data API v3** để tránh bị lạm dụng nếu lộ.
+Client ID nằm tại:
 
-### Về hạn mức (quota)
+```text
+extension/popup.js → OAUTH_CLIENT_ID
+```
 
-Quota mặc định là **10.000 đơn vị/ngày**. Chi phí mỗi thao tác:
+Không dán client ID vào `manifest.json`: implementation hiện tại không có `manifest.oauth2`.
 
-| Thao tác | Đơn vị |
-|---|---|
-| Kiểm tra video mới của 1 kênh (`playlistItems.list`) | 1 |
-| Tra cứu thông tin kênh (`channels.list`) | 1 |
-| Tìm kênh theo tên (`search.list`) | **100** |
+> Chrome/Google cũng có luồng dành riêng cho Chrome Extension credential qua `chrome.identity.getAuthToken()`. Đó là một migration riêng vì cần credential mới. Không đổi loại client ID giữa chừng nếu chưa chuẩn bị và kiểm thử credential mới.
 
-Ví dụ: theo dõi 20 kênh, kiểm tra mỗi 10 phút → `20 × 6 × 24 = 2.880` đơn vị/ngày, thoải mái trong hạn mức.
+## 3. Lấy Redirect URI
 
-Nếu gần chạm hạn mức thì tăng **Chu kỳ kiểm tra** trong popup. Lưu ý thêm kênh bằng *tên* tốn 100 đơn vị mỗi lần — dán thẳng URL kênh hoặc `@handle` thì rẻ hơn nhiều.
+1. Load thư mục `extension/` tại `chrome://extensions` hoặc `edge://extensions`.
+2. Bật Developer mode.
+3. Mở popup.
+4. Nếu OAuth client chưa cấu hình, popup hiển thị Redirect URI; hoặc đọc bằng `chrome.identity.getRedirectURL()`.
+5. Copy **chính xác** URI dạng:
+
+```text
+https://<extension-id>.chromiumapp.org/
+```
+
+Manifest local có trường `key` nhằm giữ extension ID ổn định khi phát triển. Bản ZIP nộp Store do `scripts/pack-extension.sh` tạo sẽ bỏ trường này.
+
+## 4. Google Cloud
+
+### Bật YouTube Data API v3
+
+Trong Google Cloud Console, chọn đúng project rồi bật **YouTube Data API v3**.
+
+### OAuth Branding
+
+Dùng chính xác:
+
+```text
+App name: Auto Mở Live
+Homepage URL: https://youtube-notification.chuan-nv.com/
+Privacy policy URL: https://youtube-notification.chuan-nv.com/privacy-policy.html
+Terms of service URL: https://youtube-notification.chuan-nv.com/terms.html
+Authorized domain: chuan-nv.com
+```
+
+Giữ App name là `Auto Mở Live`; “YouTube” có thể xuất hiện trong mô tả chức năng, nhưng không dùng thương hiệu đó như một phần của tên tổng thể của ứng dụng.
+
+Homepage phải mở công khai mà không cần sign-in. Website hiện được thiết kế để nói rõ:
+
+- trang chủ công khai, không phải login page;
+- Google sign-in là tuỳ chọn;
+- nút OAuth chỉ phục vụ import subscriptions / YouTube Data API;
+- scope `youtube.readonly` và mục đích sử dụng;
+- link Privacy Policy và Terms.
+
+### Search Console
+
+Xác minh quyền sở hữu top private domain:
+
+```text
+chuan-nv.com
+```
+
+Tài khoản xác minh domain nên có quyền phù hợp trên Google Cloud project dùng cho OAuth verification.
+
+### Data access / Scope
+
+Chỉ yêu cầu:
+
+```text
+https://www.googleapis.com/auth/youtube.readonly
+```
+
+Không thêm scope rộng hơn nếu code không cần.
+
+## 5. Client ID cho implementation hiện tại
+
+Nếu tiếp tục dùng `launchWebAuthFlow()` hiện tại:
+
+1. Tạo OAuth client theo loại phù hợp với luồng mà Google Cloud cho phép cho project của bạn.
+2. Đăng ký chính xác Redirect URI `https://<extension-id>.chromiumapp.org/` nếu loại client yêu cầu redirect URI.
+3. Copy client ID.
+4. Sửa:
+
+```js
+// extension/popup.js
+const OAUTH_CLIENT_ID = "YOUR_CLIENT_ID.apps.googleusercontent.com";
+```
+
+5. Reload extension.
+
+Không commit client secret. Luồng extension không được nhúng client secret.
+
+## 6. Token và dữ liệu OAuth
+
+Bản hiện tại:
+
+- giữ access token trong `chrome.storage.session`, không phải local storage bền;
+- giữ subscriptions vừa tải và thông tin kênh tài khoản trong session;
+- khi người dùng bấm **Ngắt kết nối**, gọi `https://oauth2.googleapis.com/revoke`, xoá OAuth session data và xoá các kênh đã thêm trực tiếp từ subscriptions;
+- Privacy Policy mô tả đúng các hành vi trên.
+
+## 7. Request verification lại
+
+Trước khi request:
+
+1. Deploy `web/` mới.
+2. Mở `https://youtube-notification.chuan-nv.com/` trong Incognito và xác nhận HTTP 200, nội dung đầy đủ, không login.
+3. Kiểm tra Branding dùng URL **không có `www`**.
+4. App name = `Auto Mở Live`.
+5. Privacy/Terms URL đúng như trên.
+6. Developer contact email là mailbox bạn thực sự kiểm tra.
+7. Submit **Request re-verification**; nếu giao diện có lựa chọn cho kết quả sai, dùng **Request additional review**.
+
+Nếu Verification Center nói phải reply Trust & Safety nhưng không có thread email, tìm cả Inbox/Spam/All Mail với `api-oauth-support@google.com`; sau khi đã sửa mọi issue, dùng nút re-verification/additional review trong Console khi có thay vì chờ một email không tồn tại.
+
+## 8. Test trước khi submit
+
+```text
+A. Incognito → homepage → đọc được App Purpose + Google Account Access + Privacy link, không sign-in.
+B. Load unpacked → popup mở được không Google login.
+C. Add channel ID UC... → hoạt động.
+D. Kết nối Google → consent chỉ có youtube.readonly.
+E. Import subscriptions → chọn một channel để thêm.
+F. Ngắt kết nối → OAuth session data biến mất và các channel source=subscription bị xoá.
+G. API key hoặc OAuth → video mới được phân loại bằng videos.list.
+```

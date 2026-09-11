@@ -53,6 +53,30 @@ function setStorage(items) {
   return new Promise((resolve) => chrome.storage.local.set(items, resolve));
 }
 
+function getSessionStorage(keys) {
+  return new Promise((resolve) => chrome.storage.session.get(keys, resolve));
+}
+
+function setSessionStorage(items) {
+  return new Promise((resolve) => chrome.storage.session.set(items, resolve));
+}
+
+function removeSessionStorage(keys) {
+  return new Promise((resolve) => chrome.storage.session.remove(keys, resolve));
+}
+
+async function getCachedOAuthToken() {
+  const { oauthToken, oauthTokenExpires } = await getSessionStorage({
+    oauthToken: "",
+    oauthTokenExpires: 0,
+  });
+  if (!oauthToken || !oauthTokenExpires || Date.now() >= oauthTokenExpires) {
+    await removeSessionStorage(["oauthToken", "oauthTokenExpires"]);
+    return "";
+  }
+  return oauthToken;
+}
+
 async function getChannels() {
   const { channels } = await getStorage({ channels: {} });
   return channels || {};
@@ -119,12 +143,20 @@ async function ensureAlarms() {
   }
 }
 
+async function clearLegacyOAuthStorage() {
+  // Trước v1.1.1 access token từng được lưu bền trong chrome.storage.local.
+  // Từ bản này token chỉ nằm trong chrome.storage.session và mất khi Chrome đóng.
+  await chrome.storage.local.remove(["oauthToken", "oauthTokenExpires", "oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
+}
+
 chrome.runtime.onInstalled.addListener(() => {
+  clearLegacyOAuthStorage();
   ensureAlarms();
   updateBadge();
 });
 
 chrome.runtime.onStartup.addListener(() => {
+  clearLegacyOAuthStorage();
   ensureAlarms();
   updateBadge();
 });
@@ -136,34 +168,37 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 // ---------- YouTube Data API ----------
 
-async function apiFetch(path, params, keyOrToken) {
+async function apiFetch(path, params, credential = {}) {
   const url = new URL(`${API_BASE}${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  
+
   const headers = {};
-  if (keyOrToken && keyOrToken.startsWith("ya29.")) {
-     headers["Authorization"] = `Bearer ${keyOrToken}`;
-  } else if (keyOrToken) {
-     url.searchParams.set("key", keyOrToken);
+  if (credential.oauthToken) {
+    headers["Authorization"] = `Bearer ${credential.oauthToken}`;
+  } else if (credential.apiKey) {
+    url.searchParams.set("key", credential.apiKey);
   }
 
   const res = await fetch(url.toString(), { headers });
-  // Đọc text trước — một số HTTP error (như 401, 503) có thể trả HTML không phải JSON.
   const text = await res.text();
   let data;
   try {
     data = JSON.parse(text);
   } catch {
-    throw new Error(`HTTP ${res.status}: phản hồi không phải JSON`);
+    const err = new Error(`HTTP ${res.status}: phản hồi không phải JSON`);
+    err.status = res.status;
+    throw err;
   }
   if (!res.ok) {
-    throw new Error((data && data.error && data.error.message) || `HTTP ${res.status}`);
+    const err = new Error((data && data.error && data.error.message) || `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
   }
   return data;
 }
 
-async function fetchChannelInfoById(channelId, apiKey) {
-  const data = await apiFetch("/channels", { part: "snippet", id: channelId }, apiKey);
+async function fetchChannelInfoById(channelId, credential = {}) {
+  const data = await apiFetch("/channels", { part: "snippet", id: channelId }, credential);
   const item = data.items && data.items[0];
   if (!item) throw new Error("Không tìm thấy kênh với ID: " + channelId);
   const thumbs = item.snippet.thumbnails || {};
@@ -213,7 +248,7 @@ function getAuthToken(interactive, clientId, prompt) {
 }
 
 async function fetchUserInfo(token) {
-  const data = await apiFetch("/channels", { part: "snippet", mine: "true" }, token);
+  const data = await apiFetch("/channels", { part: "snippet", mine: "true" }, { oauthToken: token });
   return data.items || [];
 }
 
@@ -225,7 +260,7 @@ async function fetchSubscriptions(token) {
   do {
     const params = { part: "snippet", mine: "true", maxResults: "50" };
     if (pageToken) params.pageToken = pageToken;
-    const data = await apiFetch("/subscriptions", params, token);
+    const data = await apiFetch("/subscriptions", params, { oauthToken: token });
     if (data.items) {
       items.push(...data.items);
     }
@@ -239,8 +274,7 @@ async function fetchSubscriptions(token) {
 
 const CHANNEL_ID_RE = /UC[0-9A-Za-z_-]{22}/;
 
-// Lấy thông tin kênh chỉ bằng RSS — không cần API key. Đây là thứ khiến chế độ
-// RSS-only dùng được thật sự chứ không chỉ là chế độ què.
+// Với channel ID đã biết, RSS công khai đủ để lấy tên kênh mà không cần tài khoản Google.
 async function channelInfoFromFeed(channelId) {
   const res = await fetch(feedUrlForChannel(channelId));
   if (!res.ok) throw new Error(`Không tải được feed của kênh (HTTP ${res.status})`);
@@ -249,76 +283,83 @@ async function channelInfoFromFeed(channelId) {
   return { id: info.id, title: info.title || info.id, thumbnail: "" };
 }
 
-// Đổi @handle hoặc URL tuỳ biến thành channelId bằng cách đọc trang kênh.
-// Chỉ chạy một lần lúc thêm kênh, không lặp trong vòng kiểm tra.
-async function resolveChannelIdByScraping(pathSegment) {
-  const res = await fetch(`https://www.youtube.com/${pathSegment}`);
-  if (!res.ok) throw new Error(`Không mở được trang kênh (HTTP ${res.status})`);
-  const html = await res.text();
-  const m =
-    html.match(/"channelId":"(UC[\w-]{22})"/) ||
-    html.match(/"externalId":"(UC[\w-]{22})"/) ||
-    html.match(/channel\/(UC[\w-]{22})/);
-  if (!m) throw new Error("Không tìm thấy channel ID trong trang kênh");
-  return m[1];
+async function fetchChannelInfoByHandle(handle, credential) {
+  const clean = handle.replace(/^@/, "");
+  const data = await apiFetch("/channels", { part: "snippet", forHandle: clean }, credential);
+  const item = data.items && data.items[0];
+  if (!item) throw new Error("Không tìm thấy kênh với @handle: " + handle);
+  const thumbs = item.snippet.thumbnails || {};
+  return {
+    id: item.id,
+    title: item.snippet.title,
+    thumbnail: (thumbs.default || thumbs.medium || {}).url || "",
+  };
 }
 
-export async function resolveChannelInput(rawInput, apiKey) {
+async function fetchChannelInfoByUsername(username, credential) {
+  const data = await apiFetch("/channels", { part: "snippet", forUsername: username }, credential);
+  const item = data.items && data.items[0];
+  if (!item) throw new Error("Không tìm thấy kênh với username: " + username);
+  const thumbs = item.snippet.thumbnails || {};
+  return {
+    id: item.id,
+    title: item.snippet.title,
+    thumbnail: (thumbs.default || thumbs.medium || {}).url || "",
+  };
+}
+
+export async function resolveChannelInput(rawInput, credential = {}) {
   const input = (rawInput || "").trim();
   if (!input) throw new Error("Vui lòng nhập URL hoặc tên kênh");
 
-  // 1) Có sẵn channel ID trong input (kể cả nằm trong URL)
+  const hasApiCredential = !!(credential.apiKey || credential.oauthToken);
+
+  // 1) Channel ID trực tiếp (kể cả nằm trong URL) luôn dùng được.
   const direct = input.match(CHANNEL_ID_RE);
   if (direct) {
     const id = direct[0];
-    if (apiKey) {
+    if (hasApiCredential) {
       try {
-        return await fetchChannelInfoById(id, apiKey);
-      } catch (e) {
-        // API lỗi hoặc hết quota -> vẫn thêm được kênh nhờ feed
+        return await fetchChannelInfoById(id, credential);
+      } catch {
+        // API lỗi/hết quota: vẫn có thể lấy dữ liệu cơ bản từ RSS công khai.
       }
     }
     return await channelInfoFromFeed(id);
   }
 
-  // 2) @handle hoặc URL kênh -> đọc trang kênh lấy channelId
-  let segment = null;
   const trimmed = input.replace(/^https?:\/\/(www\.)?youtube\.com\//i, "");
-  if (trimmed.startsWith("@")) {
-    segment = trimmed.split(/[/?#]/)[0];
-  } else if (/^(c|user)\//i.test(trimmed)) {
-    segment = trimmed.split(/[?#]/)[0];
-  } else if (input.startsWith("@")) {
-    segment = input.split(/[/?#]/)[0];
-  }
+  const firstSegment = trimmed.split(/[/?#]/)[0];
 
-  if (segment) {
-    const id = await resolveChannelIdByScraping(segment);
-    if (apiKey) {
-      try {
-        return await fetchChannelInfoById(id, apiKey);
-      } catch (e) {
-        /* rơi xuống feed */
-      }
+  // 2) @handle: dùng channels.list?forHandle — không scrape HTML trang YouTube.
+  if (input.startsWith("@") || firstSegment.startsWith("@")) {
+    if (!hasApiCredential) {
+      throw new Error("Để thêm bằng @handle, hãy kết nối Google hoặc nhập YouTube Data API key. Bạn vẫn có thể dán URL /channel/UC... hoặc channel ID trực tiếp.");
     }
-    return await channelInfoFromFeed(id);
+    return await fetchChannelInfoByHandle(input.startsWith("@") ? input : firstSegment, credential);
   }
 
-  // 3) Cuối cùng: tìm theo tên. Chỉ làm được khi có API key, và tốn 100 unit
-  //    nên đây là lựa chọn cuối.
-  if (!apiKey) {
-    throw new Error(
-      "Chưa có API key nên chỉ thêm được bằng URL kênh, @handle hoặc channel ID (UC...)."
-    );
+  // 3) URL /user/... cũ: dùng bộ lọc forUsername chính thức.
+  if (/^user\//i.test(trimmed)) {
+    if (!hasApiCredential) {
+      throw new Error("Để thêm URL /user/..., hãy kết nối Google hoặc nhập YouTube Data API key.");
+    }
+    return await fetchChannelInfoByUsername(trimmed.split(/[/?#]/)[1] || "", credential);
   }
+
+  // 4) Tên kênh hoặc URL /c/...: tìm bằng YouTube Data API (100 quota units).
+  if (!hasApiCredential) {
+    throw new Error("Không thể tìm theo tên khi chưa có API credential. Hãy kết nối Google, nhập API key, hoặc dán channel ID (UC...).");
+  }
+  const query = /^c\//i.test(trimmed) ? (trimmed.split(/[/?#]/)[1] || input) : input;
   const search = await apiFetch(
     "/search",
-    { part: "snippet", type: "channel", q: input, maxResults: 1 },
-    apiKey
+    { part: "snippet", type: "channel", q: query, maxResults: 1 },
+    credential
   );
   const first = search.items && search.items[0];
   if (!first) throw new Error("Không tìm thấy kênh phù hợp với: " + input);
-  return await fetchChannelInfoById(first.snippet.channelId, apiKey);
+  return await fetchChannelInfoById(first.snippet.channelId, credential);
 }
 
 // ---------- Vòng 1: phát hiện video mới qua RSS ----------
@@ -461,37 +502,19 @@ async function checkPendingVideos() {
   }
 
   const apiKey = await getApiKey();
-  const { oauthToken } = await getStorage({ oauthToken: "" });
+  const oauthToken = await getCachedOAuthToken();
 
   const channels = await getChannels();
 
-  // Chế độ RSS-only: không có key thì không phân biệt được live/upcoming.
-  // Coi mọi video như video thường và xử lý theo mode của kênh.
+  // Không scrape HTML trang YouTube. Nếu chưa có API key hoặc kết nối Google,
+  // RSS vẫn phát hiện video mới nhưng extension giữ chúng trong hàng chờ cho tới
+  // khi có credential để phân loại chính xác video thường/live/upcoming.
   if (!apiKey && !oauthToken) {
-    // Chế độ không key/token: Scraping HTML trực tiếp để phát hiện livestream
-    const classified = [];
-    try {
-      for (const e of due) {
-        const res = await fetch(`https://www.youtube.com/watch?v=${e.videoId}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const html = await res.text();
-        e.lastCheckedAt = now;
-        
-        let state = "none";
-        if (html.includes('"isLiveNow":true') || html.includes('"isLive":true')) {
-          state = "live";
-        } else if (html.includes('"isUpcoming":true')) {
-          state = "upcoming";
-        }
-        classified.push({ entry: e, state });
-      }
-      await handleClassified(classified, pending, channels);
-      await setStatus({ lastError: "", lastLiveCheckAt: now });
-    } catch (err) {
-      // Nếu scrape lỗi, fallback coi như video thường
-      await handleClassified(due.map((e) => ({ entry: e, state: "none" })), pending, channels);
-      await setStatus({ lastError: "Scrape lỗi: " + err.message, lastLiveCheckAt: now });
-    }
+    await setStorage({ pending });
+    await setStatus({
+      lastError: "Cần API key hoặc kết nối Google để phân loại chính xác video/livestream đang chờ.",
+      lastLiveCheckAt: now,
+    });
     return;
   }
   const classified = [];
@@ -501,7 +524,7 @@ async function checkPendingVideos() {
       const data = await apiFetch(
         "/videos",
         { part: "snippet,liveStreamingDetails", id: batch.join(",") },
-        apiKey || oauthToken
+        { apiKey, oauthToken: apiKey ? "" : oauthToken }
       );
 
       const byId = new Map((data.items || []).map((it) => [it.id, it]));
@@ -527,7 +550,13 @@ async function checkPendingVideos() {
       }
     }
   } catch (err) {
-    // Hết quota hoặc key sai: giữ nguyên hàng chờ, thử lại vòng sau.
+    // Token OAuth không còn hợp lệ: xoá credential/session data tạm thời nhưng
+    // không tự xoá cấu hình theo dõi của người dùng (chỉ nút Disconnect làm việc đó).
+    if (err && err.status === 401 && !apiKey && oauthToken) {
+      await removeSessionStorage(["oauthToken", "oauthTokenExpires", "oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
+    }
+    // Hết quota/key sai/token hết hạn: giữ hàng chờ và thử lại sau khi người dùng
+    // cung cấp credential hợp lệ.
     await setStorage({ pending });
     await setStatus({ lastError: err.message || String(err), lastLiveCheckAt: now });
     return;
@@ -629,7 +658,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       switch (message.type) {
         case "resolveChannel": {
-          const info = await resolveChannelInput(message.input, await getApiKey());
+          const apiKey = await getApiKey();
+          const oauthToken = await getCachedOAuthToken();
+          const info = await resolveChannelInput(message.input, { apiKey, oauthToken: apiKey ? "" : oauthToken });
           sendResponse({ ok: true, channel: info });
           return;
         }
@@ -652,20 +683,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         case "fetchSubscriptions": {
           try {
-            const { oauthToken, oauthTokenExpires } = await getStorage({ oauthToken: "", oauthTokenExpires: 0 });
-            let token = oauthToken;
-            
-            if (message.prompt || !token || Date.now() >= oauthTokenExpires) {
+            const cached = await getSessionStorage({ oauthToken: "", oauthTokenExpires: 0 });
+            let token = cached.oauthToken;
+
+            if (message.prompt || !token || Date.now() >= cached.oauthTokenExpires) {
               let authRes;
               try {
                 authRes = await getAuthToken(false, message.clientId, message.prompt);
-              } catch (err) {
+              } catch {
                 authRes = await getAuthToken(true, message.clientId, message.prompt);
               }
               token = authRes.token;
-              await setStorage({ 
-                oauthToken: token, 
-                oauthTokenExpires: Date.now() + (authRes.expiresIn * 1000) - 60000 // trừ hao 1 phút
+              await setSessionStorage({
+                oauthToken: token,
+                oauthTokenExpires: Date.now() + (authRes.expiresIn * 1000) - 60000,
               });
             }
             
@@ -686,11 +717,58 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               };
             }
             
-            await setStorage({ fetchedSubs: subs, oauthUser });
+            await setSessionStorage({ fetchedSubs: subs, oauthUser, oauthDataFetchedAt: Date.now() });
             sendResponse({ ok: true, subs, oauthUser });
           } catch (err) {
+            if (err && err.status === 401) {
+              await removeSessionStorage(["oauthToken", "oauthTokenExpires"]);
+              await removeSessionStorage(["oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
+            }
             sendResponse({ ok: false, error: err.message || String(err) });
           }
+          return;
+        }
+        case "revokeOAuth": {
+          const cached = await getSessionStorage({ oauthToken: "", oauthTokenExpires: 0 });
+          let token = cached.oauthToken;
+          let revokeWarning = "";
+
+          if ((!token || Date.now() >= cached.oauthTokenExpires) && message.clientId) {
+            try {
+              const authRes = await getAuthToken(false, message.clientId);
+              token = authRes.token;
+            } catch {
+              // Không bật cửa sổ đăng nhập chỉ để ngắt kết nối. Người dùng vẫn có
+              // thể thu hồi quyền từ trang Google Account được liên kết trong UI.
+            }
+          }
+
+          if (token) {
+            try {
+              const body = new URLSearchParams({ token }).toString();
+              const res = await fetch("https://oauth2.googleapis.com/revoke", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body,
+              });
+              if (!res.ok) {
+                revokeWarning = `Google trả HTTP ${res.status} khi thu hồi token; dữ liệu OAuth cục bộ vẫn đã được xoá. Bạn có thể kiểm tra quyền trong Google Account > Third-party connections.`;
+              }
+            } catch (err) {
+              revokeWarning = "Không thể xác nhận thu hồi quyền với Google: " + (err.message || String(err));
+            }
+          } else {
+            revokeWarning = "Không có access token còn hiệu lực để thu hồi tự động. Hãy kiểm tra Google Account > Third-party connections nếu muốn xác nhận quyền đã bị gỡ.";
+          }
+
+          await removeSessionStorage(["oauthToken", "oauthTokenExpires"]);
+          const channels = await getChannels();
+          for (const [id, ch] of Object.entries(channels)) {
+            if (ch && ch.source === "subscription") delete channels[id];
+          }
+          await setStorage({ channels });
+          await removeSessionStorage(["oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
+          sendResponse({ ok: true, warning: revokeWarning });
           return;
         }
         default:

@@ -101,3 +101,44 @@ jobs:
           name: extension-zip
           path: dist/*.zip
           if-no-files-found: error
+
+      - name: Kiểm tra branding và OAuth disclosure
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path('.')
+          manifest = json.loads((root/'extension/manifest.json').read_text(encoding='utf-8'))
+          errors = []
+          if manifest.get('name') != 'Auto Mở Live':
+              errors.append('manifest.name phải là Auto Mở Live')
+          if manifest.get('homepage_url') != 'https://youtube-notification.chuan-nv.com/':
+              errors.append('homepage_url không đúng URL production')
+          index = (root/'web/index.html').read_text(encoding='utf-8')
+          privacy = (root/'web/privacy-policy.html').read_text(encoding='utf-8')
+          if 'không yêu cầu đăng nhập' not in index.lower():
+              errors.append('homepage thiếu tuyên bố không yêu cầu đăng nhập')
+          if 'https://www.googleapis.com/auth/youtube.readonly' not in index:
+              errors.append('homepage thiếu disclosure youtube.readonly')
+          if 'https://youtube-notification.chuan-nv.com/privacy-policy.html' not in index:
+              errors.append('homepage thiếu Privacy URL production')
+          if 'chrome.storage.session' not in privacy:
+              errors.append('Privacy Policy thiếu mô tả OAuth session storage')
+          if errors:
+              for e in errors: print('::error::' + e)
+              sys.exit(1)
+          print('OK — branding/OAuth disclosure nhất quán')
+          PY
+
+      - name: Không đưa branding cũ trở lại
+        run: |
+          if grep -RniE 'Auto Mở Live Youtube|Phiên Google|Google Session' extension web README.md docs --exclude='*.woff2'; then
+            echo '::error::Phát hiện tên/cách diễn đạt branding cũ.'
+            exit 1
+          fi
+
+      - name: Không đưa lại HTML scraping của YouTube
+        run: |
+          if grep -RniE 'fetch\([^)]*youtube\.com/(watch|@|channel/|c/|user/)|resolveChannelIdByScraping|"isLiveNow"|"isUpcoming"' extension --include='*.js'; then
+            echo '::error::Phát hiện logic scrape HTML YouTube; dùng YouTube Data API thay thế.'
+            exit 1
+          fi

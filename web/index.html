@@ -3,12 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Auto Mở Live Youtube</title>
-<meta name="description" content="Extension Chrome tự mở tab đúng lúc kênh YouTube bạn theo dõi bắt đầu livestream, hoặc khi có video mới. Miễn phí, mã nguồn mở, không thu thập dữ liệu.">
+<title>Auto Mở Live — theo dõi livestream và video mới trên YouTube</title>
+<meta name="description" content="Auto Mở Live là extension Chrome giúp theo dõi các kênh YouTube do bạn chọn, thông báo và tự mở tab khi có video mới hoặc livestream bắt đầu. Google sign-in chỉ là tính năng tuỳ chọn để nhập subscriptions.">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Auto Mở Live Youtube — tự mở tab đúng lúc livestream lên sóng">
-<meta property="og:description" content="Kênh bật livestream, tab mới tự mở trong 30 giây. Cũng bắt cả video thường. Miễn phí, mã nguồn mở, không thu thập dữ liệu.">
+<meta property="og:title" content="Auto Mở Live — tự mở tab đúng lúc livestream lên sóng">
+<meta property="og:description" content="Theo dõi kênh YouTube bạn chọn. Google sign-in chỉ được yêu cầu khi bạn chủ động nhập danh sách subscriptions.">
 <meta property="og:locale" content="vi_VN">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://youtube-notification.chuan-nv.com/">
+<meta property="og:url" content="https://youtube-notification.chuan-nv.com/">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="fonts.css">
 <style>
@@ -328,6 +331,17 @@
   }
   .privacy-note p { margin: 0; font-size: 13.5px; color: var(--ink-soft); max-width: 52ch; }
 
+  .oauth-card {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    padding: 24px;
+    margin-top: 18px;
+  }
+  .oauth-card h3 { margin: 0 0 10px; font-size: 19px; }
+  .oauth-card p { margin: 7px 0; color: var(--ink-soft); font-size: 14px; }
+  .oauth-card code { font-size: 12px; word-break: break-all; }
+  .oauth-card .en { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 14px; }
+
   footer {
     padding: 34px 0 50px;
     display: flex;
@@ -350,14 +364,18 @@
 <div class="wrap">
   <header>
     <div class="logo" style="width: 36px; height: 36px; background: var(--accent); border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px;">
-      <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M9 7l7 5-7 5V7z" fill="#fff"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" width="20" height="20" aria-hidden="true"><path d="M12 3a5 5 0 0 0-5 5v3.5L5.5 14v1h13v-1L17 11.5V8a5 5 0 0 0-5-5ZM10 17a2 2 0 0 0 4 0" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
-    <h1>Auto Mở Live Youtube</h1>
+    <h1>Auto Mở Live</h1>
     <p class="subtitle" style="max-width: 600px; margin: 10px auto; text-wrap: balance; font-size: 14px; color: var(--ink-soft);">
-      <strong>Mục đích của ứng dụng (App Purpose):</strong> Ứng dụng là một tiện ích mở rộng trình duyệt (Browser Extension) giúp người dùng theo dõi các kênh YouTube yêu thích của họ. Ứng dụng tự động theo dõi lịch phát sóng và mở tab mới đúng lúc kênh bắt đầu livestream hoặc đăng video mới. 
+      <strong>Mục đích của ứng dụng (App Purpose):</strong> Auto Mở Live là tiện ích mở rộng trình duyệt giúp người dùng theo dõi các kênh YouTube do họ tự chọn. Tiện ích kiểm tra video mới và trạng thái livestream, sau đó có thể thông báo và mở tab khi nội dung phù hợp bắt đầu phát.
     </p>
     <p class="subtitle" style="margin-top: 6px; max-width: 600px; margin-left: auto; margin-right: auto; font-size: 13px; color: var(--ink-soft);">
-      (The application is a browser extension that allows users to track their favorite YouTube channels and automatically opens a new tab when those channels go live or upload a new video.)
+      (Auto Mở Live is a browser extension that tracks YouTube channels selected by the user and can notify/open a tab when a new video appears or a livestream actually starts.)
+    </p>
+    <p class="subtitle" style="margin-top: 8px; max-width: 680px; margin-left: auto; margin-right: auto; font-size: 13px; color: var(--ink-soft);">
+      <strong>Trang này hoàn toàn công khai và không yêu cầu đăng nhập.</strong> Đăng nhập Google chỉ xuất hiện bên trong extension khi người dùng chủ động chọn chức năng nhập danh sách kênh đã đăng ký.
+      <br><span lang="en"><strong>This homepage is public and requires no sign-in.</strong> Google authorization is only launched inside the extension after the user explicitly chooses to import subscriptions.</span>
     </p>
     <div style="margin-top: 20px;">
       <a href="#steps" style="margin-right: 16px; color: var(--ink); text-decoration: underline; font-size: 14px;">Cách hoạt động</a>
@@ -370,9 +388,7 @@
     <div>
       <span class="eyebrow">● Extension Chrome — mã nguồn mở</span>
       <h1>Kênh bật <em>livestream</em>, tab mới tự mở trong 30 giây.</h1>
-      <p class="lede">Chọn vài kênh YouTube bạn không muốn bỏ lỡ. Auto Mở Live Youtube âm thầm canh
-      nền, và <strong>đúng lúc stream lên sóng</strong> — không phải lúc nó được lên lịch — một
-      tab mới tự mở kèm thông báo. Bạn không cần ngồi canh giờ nữa.</p>
+      <p class="lede">Chọn vài kênh YouTube bạn không muốn bỏ lỡ. Auto Mở Live chạy nền và, khi có đủ API credential để xác minh trạng thái, <strong>canh đúng lúc stream lên sóng</strong> thay vì mở ngay lúc lịch phát được tạo. Một tab mới có thể tự mở kèm thông báo.</p>
       <div class="cta-row">
         <span class="btn primary is-disabled" id="storeBtn" role="link" aria-disabled="true" title="Extension đang chờ duyệt trên Chrome Web Store">▶ Cài từ Chrome Web Store <span class="tag">sắp có</span></span>
         <a class="btn ghost" href="https://github.com/VanChuan1998/youtube-notify-extension">Xem mã nguồn trên GitHub</a>
@@ -407,8 +423,7 @@
       <div class="step">
         <div class="num">01</div>
         <h3>Chọn kênh</h3>
-        <p>Dán URL, <span class="mono">@handle</span>, hoặc nhập từ danh sách đã subscribe. Mỗi
-        kênh chọn riêng: <em>mọi video</em> hay <em>chỉ livestream</em>.</p>
+        <p>Dán channel ID/URL, dùng <span class="mono">@handle</span> khi đã có API credential, hoặc nhập từ danh sách subscriptions sau khi tự chọn kết nối Google. Mỗi kênh chọn riêng: <em>mọi video</em> hay <em>chỉ livestream</em>.</p>
       </div>
       <div class="step">
         <div class="num">02</div>
@@ -421,6 +436,21 @@
         <h3>Canh đúng lúc lên sóng</h3>
         <p>Stream mới lên lịch thì chờ, kiểm tra lại mỗi 30 giây. Đúng lúc phát thật → mở tab và
         báo desktop ngay.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="google-access">
+    <div class="kicker">Google account &amp; YouTube data access</div>
+    <h2>Đăng nhập Google là tuỳ chọn, không phải cửa đăng nhập của ứng dụng</h2>
+    <div class="oauth-card">
+      <h3>Tài khoản Google và dữ liệu YouTube</h3>
+      <p>Bạn có thể mở extension, thêm channel ID và xem toàn bộ thông tin ứng dụng mà không cần đăng nhập Google. Chỉ khi bạn chủ động chọn <strong>“Kết nối Google &amp; tải kênh đã đăng ký”</strong>, extension mới bắt đầu OAuth.</p>
+      <p>Extension chỉ yêu cầu scope chỉ đọc <code>https://www.googleapis.com/auth/youtube.readonly</code> để đọc danh sách kênh YouTube mà tài khoản đã đăng ký và thông tin cơ bản của kênh YouTube thuộc tài khoản. Scope này không cho phép Auto Mở Live đăng video, sửa nội dung, xoá nội dung, bình luận hay thay đổi subscriptions.</p>
+      <p>Access token và dữ liệu vừa tải chỉ được giữ tạm trong phiên Chrome. Khi gọi API, token được gửi trực tiếp tới Google/YouTube qua HTTPS; nhà phát triển không vận hành backend nhận token hoặc dữ liệu tài khoản. Nút <strong>Ngắt kết nối</strong> trong extension xoá dữ liệu OAuth cục bộ và cố gắng thu hồi token tại Google.</p>
+      <p><a href="https://youtube-notification.chuan-nv.com/privacy-policy.html">Đọc Chính sách bảo mật đầy đủ</a> · <a href="https://security.google.com/settings/security/permissions">Quản lý/thu hồi quyền trong Google Account</a></p>
+      <div class="en" lang="en">
+        <p><strong>Google sign-in is optional.</strong> The OAuth flow only starts after the user explicitly chooses to import subscriptions. Auto Mở Live requests only the read-only <code>youtube.readonly</code> scope to retrieve subscribed channels and basic YouTube channel information. OAuth tokens are kept only for the Chrome session and are sent directly to Google APIs when required; they are not sent to a developer-operated server.</p>
       </div>
     </div>
   </section>
@@ -439,7 +469,7 @@
       </div>
       <div class="feature">
         <div class="ico">🆓</div>
-        <div><h4>Không cần API key</h4><p>Extension sử dụng công nghệ tự động cào dữ liệu HTML siêu việt kết hợp với Phiên Google, tự phát hiện Livestream mà không cần cấu hình rườm rà.</p></div>
+        <div><h4>Hai cách xác minh trạng thái</h4><p>Bạn có thể dùng API key của riêng mình hoặc kết nối Google tuỳ chọn. Auto Mở Live không đọc cookie/session và không scrape HTML trang YouTube để phân loại livestream.</p></div>
       </div>
       <div class="feature">
         <div class="ico">♾</div>
@@ -447,7 +477,7 @@
       </div>
       <div class="feature">
         <div class="ico">🔒</div>
-        <div><h4>Bảo mật CSP khắt khe nhất</h4><p>Extension bị cô lập bằng Content Security Policy. Nó chỉ được phép kết nối đến Google, mọi dữ liệu không thể rò rỉ ra bên ngoài kể cả khi có mã độc.</p></div>
+        <div><h4>Kết nối mạng giới hạn</h4><p>Manifest giới hạn các host cần thiết cho YouTube/Google API và endpoint thu hồi OAuth. Không có analytics, telemetry hay backend của nhà phát triển.</p></div>
       </div>
       <div class="feature">
         <div class="ico">🧩</div>
@@ -458,10 +488,10 @@
 
   <section>
     <div class="privacy-note">
-      <p>Extension không thu thập hay bán dữ liệu người dùng, và không có máy chủ nào của chúng tôi. Nó chỉ nói chuyện trực tiếp với YouTube. Xem chi tiết cách dữ liệu được xử lý.</p>
+      <p>Nhà phát triển không thu thập hoặc bán dữ liệu người dùng và không vận hành backend cho extension. Các yêu cầu cần thiết được gửi trực tiếp tới YouTube/Google; OAuth chỉ chạy khi người dùng chủ động chọn. Xem chi tiết cách dữ liệu được truy cập, lưu và xoá.</p>
       <div>
-        <a class="btn ghost" href="/privacy-policy.html">Chính sách bảo mật</a>
-        <a class="btn ghost" href="/terms.html" style="margin-left: 8px;">Điều khoản sử dụng</a>
+        <a class="btn ghost" href="https://youtube-notification.chuan-nv.com/privacy-policy.html">Chính sách bảo mật</a>
+        <a class="btn ghost" href="https://youtube-notification.chuan-nv.com/terms.html" style="margin-left: 8px;">Điều khoản sử dụng</a>
       </div>
     </div>
   </section>

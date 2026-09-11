@@ -229,3 +229,28 @@ footer {
   font-size: 11px;
   white-space: nowrap;
 }
+
+
+.oauth-disclosure {
+  margin: 6px 0 8px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.oauth-disclosure strong { color: var(--fg); }
+.oauth-disclosure code { font-size: 10px; word-break: break-word; }
+.oauth-disclosure a, .legal-links a { color: var(--fg); }
+.disconnect-btn {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.legal-links {
+  margin-top: 5px;
+  font-size: 10px;
+  color: var(--muted);
+}

@@ -1,107 +1,60 @@
-# Deploy landing page lên Cloudflare (youtube.chuan-nv.com)
+# Deploy website lên Cloudflare
 
-Cloudflare hiện khuyến nghị dùng **Workers Static Assets** thay vì Pages cho project mới (Pages
-vẫn chạy nhưng không còn được đầu tư tính năng mới). Hướng dẫn dưới đây deploy 2 file tĩnh
-(`web/index.html` — landing page, `web/privacy-policy.html`) lên 1 Worker, rồi gắn subdomain
-riêng trỏ vào domain `chuan-nv.com` bạn đang quản lý trên Cloudflare.
+Website public của dự án:
 
-Thư mục `web/` và file `wrangler.jsonc` đã có sẵn trong repo, không cần tạo project mới bằng
-`create-cloudflare`.
+```text
+https://youtube-notification.chuan-nv.com/
+```
 
-## Yêu cầu
+`wrangler.jsonc` đang phục vụ static assets từ `./web` và gắn custom domain `youtube-notification.chuan-nv.com`.
 
-- Node.js đã cài trên máy bạn
-- Domain `chuan-nv.com` đã thêm vào tài khoản Cloudflare (nameservers trỏ về Cloudflare) — nếu
-  domain chưa nằm trong Cloudflare, cần thêm zone trước ở **Websites → Add a domain**
-
-## Bước 1 — Đăng nhập Wrangler
+## Deploy thủ công
 
 ```bash
-cd youtube-notify-extension
-npx wrangler login
+npm install   # chỉ nếu môi trường chưa có wrangler/npx cần dependency
+npx wrangler@4 deploy
 ```
 
-Lệnh này mở trình duyệt để bạn đăng nhập & cấp quyền cho Wrangler CLI trên máy bạn.
-
-## Bước 2 — Deploy
+Sau deploy, kiểm tra:
 
 ```bash
-npx wrangler deploy
+curl -I https://youtube-notification.chuan-nv.com/
+curl -I https://youtube-notification.chuan-nv.com/privacy-policy.html
+curl -I https://youtube-notification.chuan-nv.com/terms.html
+curl -IL https://youtube-notification.chuan-nv.com/
 ```
 
-Wrangler đọc `wrangler.jsonc` (đã cấu hình `assets.directory: "./site"`) và deploy 2 file HTML
-lên Worker tên `youtube-kenh-yeu-thich`. Sau khi chạy xong, bạn sẽ nhận được URL dạng:
+Homepage phải trả nội dung public mà không có redirect tới login hoặc domain khác.
 
-```
-https://youtube-kenh-yeu-thich.<subdomain-tài-khoản>.workers.dev
-```
+## GitHub Actions
 
-Mở thử URL này để kiểm tra trang đã lên đúng chưa trước khi gắn domain riêng.
+Workflow `.github/workflows/deploy.yml` deploy khi `web/` hoặc `wrangler.jsonc` thay đổi trên `main`.
 
-## Bước 3 — Gắn subdomain youtube.chuan-nv.com
+Repository secrets cần có:
 
-1. Vào https://dash.cloudflare.com → **Workers & Pages**
-2. Chọn Worker `youtube-kenh-yeu-thich`
-3. Tab **Settings → Domains & Routes** → **Add → Custom Domain**
-4. Nhập `youtube.chuan-nv.com` → **Add Domain**
-
-Vì `chuan-nv.com` đã quản lý DNS trên Cloudflare, hệ thống tự tạo bản ghi DNS cần thiết (thường
-là CNAME/AAAA proxy) và cấp SSL — không cần vào tab DNS thêm thủ công. Sau vài phút,
-`https://youtube.chuan-nv.com` sẽ hoạt động.
-
-## Cập nhật trang sau này
-
-Sửa file trong `web/`, commit và push lên `main`. **GitHub Actions tự deploy** — xem mục dưới.
-
-Muốn deploy thủ công thì vẫn được:
-
-```bash
-npx wrangler deploy
+```text
+CLOUDFLARE_API_TOKEN
+CLOUDFLARE_ACCOUNT_ID
 ```
 
-Domain tuỳ chỉnh vẫn giữ nguyên, không cần cấu hình lại.
+API token chỉ cần quyền tối thiểu đủ để deploy Worker/static assets và quản lý route/domain của project này. Không commit token vào repo.
 
-## Tự động deploy bằng GitHub Actions
+## Custom domain
 
-Workflow `.github/workflows/deploy.yml` chạy mỗi khi push lên `main` có thay đổi trong `web/`
-hoặc `wrangler.jsonc`. Cần khai báo 2 secret một lần duy nhất.
+Trong Cloudflare Workers & Pages, custom domain phải là:
 
-### Lấy Account ID
+```text
+youtube-notification.chuan-nv.com
+```
 
-1. Vào https://dash.cloudflare.com
-2. Chọn **Workers & Pages** ở menu bên trái
-3. Account ID hiện ở cột bên phải — bấm để copy
+Không khai báo `www.youtube-notification.chuan-nv.com` trong Google OAuth Branding trừ khi bạn thật sự cấu hình hostname đó hoạt động và phục vụ cùng website. Với cấu hình hiện tại, OAuth Homepage dùng bản không có `www`.
 
-### Tạo API token
+## Checklist sau deploy cho OAuth Verification
 
-1. Vào https://dash.cloudflare.com/profile/api-tokens
-2. **Create Token** → chọn template **Edit Cloudflare Workers** → **Use template**
-3. Ở **Account Resources**, giới hạn đúng account của bạn
-4. Ở **Zone Resources**, chọn `chuan-nv.com` (cần cho việc gắn custom domain)
-5. **Continue to summary** → **Create Token** → copy chuỗi token
-
-> Token chỉ hiện đúng một lần. Copy ngay, và **đừng commit vào repo hay dán vào chat** —
-> nó cho phép sửa mọi Worker trong account. Nếu lỡ lộ, quay lại trang trên và bấm **Roll**
-> để đổi token mới.
-
-### Dán vào GitHub
-
-Trong repo trên GitHub: **Settings → Secrets and variables → Actions → New repository secret**,
-tạo lần lượt 2 secret:
-
-| Tên secret | Giá trị |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | token vừa tạo |
-| `CLOUDFLARE_ACCOUNT_ID` | Account ID vừa copy |
-
-Xong. Lần push tiếp theo chạm `web/` sẽ tự deploy. Muốn chạy tay thì vào tab **Actions** →
-**Deploy web lên Cloudflare** → **Run workflow**.
-
-Nếu thiếu secret, workflow dừng ngay ở bước đầu với thông báo rõ ràng thay vì để `wrangler`
-báo lỗi xác thực khó hiểu.
-
-## Nếu muốn dùng Cloudflare Pages thay vì Workers
-
-Vẫn được hỗ trợ, chỉ khác ở bước tạo project: **Workers & Pages → Create application → Pages
-→ Upload assets**, kéo thả thư mục `web/` vào, rồi cũng vào **Custom domains** để gắn
-`youtube.chuan-nv.com` tương tự Bước 3.
+- Homepage hiển thị tên `Auto Mở Live`.
+- Có mô tả chức năng trước khi login.
+- Có câu nói rõ homepage công khai và Google sign-in là tuỳ chọn.
+- Có phần giải thích `youtube.readonly`.
+- Privacy và Terms mở trực tiếp.
+- Không có redirect bất ngờ.
+- App name/URL trong Google Cloud trùng 100% với website production.

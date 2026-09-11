@@ -1,164 +1,111 @@
-# Auto Mở Live Youtube
+# Auto Mở Live
 
-Extension Chrome: chọn các kênh YouTube muốn theo dõi, extension tự động kiểm tra định kỳ
-(mặc định 10 phút/lần) qua YouTube Data API. Khi kênh đăng video mới, extension sẽ:
+Auto Mở Live là Chrome extension giúp theo dõi các kênh YouTube do người dùng tự chọn, phát hiện nội dung mới, thông báo và có thể tự mở tab khi video/livestream phù hợp xuất hiện.
 
-- Mở 1 tab mới đến video đó (tối đa 3 tab mỗi vòng kiểm tra)
-- Hiện thông báo desktop kèm tiêu đề video
-
-**Bắt đúng lúc livestream lên sóng.** Kênh lên lịch stream trước cả tuần thì extension
-không mở tab ngay — nó ghi vào danh sách chờ và canh, rồi mở tab **trong vòng 30 giây**
-kể từ lúc stream thực sự bắt đầu phát.
-
-Có 2 cách thêm kênh vào danh sách theo dõi:
-
-1. Dán URL kênh / `@handle` / tên kênh vào ô "Thêm kênh theo dõi" — chỉ cần API key
-2. Bấm "Đăng nhập Google & tải danh sách đã subscribe" — cần thêm OAuth client ID,
-   xem [docs/OAUTH-SETUP.md](docs/OAUTH-SETUP.md)
-
----
-
-## Cấu trúc repo
-
-Repo chứa hai thứ tách bạch, mỗi thứ có vòng đời triển khai riêng:
-
-```
-extension/          Mã nguồn Chrome extension → nộp Chrome Web Store
-├── manifest.json
-├── background.js       service worker: hai vòng lặp hẹn giờ, mở tab
-├── lib/
-│   ├── rss.js          parse RSS feed của kênh
-│   └── decide.js       logic phân loại và quyết định (được test)
-├── popup.html/js/css   giao diện quản lý kênh
-└── icons/
-
-tests/              test chạy bằng `node --test`, không nằm trong bản nộp Store
-├── rss.test.js
-├── decide.test.js
-└── fixtures/
-
-web/                Landing page + chính sách bảo mật → deploy Cloudflare
-├── index.html
-├── privacy-policy.html
-├── 404.html
-├── fonts.css           sinh tự động, đừng sửa tay
-└── fonts/              font self-host (.woff2)
-
-docs/
-├── OAUTH-SETUP.md          tạo API key và OAuth client ID trên Google Cloud
-├── PUBLISHING.md           nộp lên Chrome Web Store
-└── DEPLOY-CLOUDFLARE.md    deploy web + cấu hình auto-deploy
-
-scripts/
-├── pack-extension.sh   đóng gói extension/ thành zip nộp Web Store
-└── fetch-fonts.sh      tải lại font từ Google Fonts về web/fonts/
-
-.github/workflows/
-├── ci.yml              kiểm tra extension + web mỗi lần push, build sẵn zip
-└── deploy.yml          tự deploy web/ lên Cloudflare khi push lên main
-
-wrangler.jsonc      cấu hình Cloudflare Workers (assets → ./web)
-```
-
-**Vì sao chung một repo:** Chrome Web Store bắt buộc có URL chính sách bảo mật công khai, mà
-nội dung chính sách đó phải mô tả đúng hành vi của extension. Hai thứ luôn phải đổi cùng lúc —
-tách repo chỉ tạo cơ hội cho chúng lệch nhau. Script `pack-extension.sh` đảm bảo file zip nộp
-Web Store không lẫn phần web.
-
----
-
-## Bắt đầu nhanh
-
-### 1. Lấy API key
-
-Bắt buộc — extension dùng nó để kiểm tra video mới. Xem
-[docs/OAUTH-SETUP.md](docs/OAUTH-SETUP.md#api-key-bắt-buộc-khác-với-oauth).
-
-### 2. Cài extension vào Chrome
-
-1. Mở `chrome://extensions`
-2. Bật **Developer mode** (góc trên bên phải)
-3. Bấm **Load unpacked** → chọn thư mục **`extension/`** (thư mục chứa `manifest.json`)
-4. Bấm icon extension để mở popup, dán API key, bấm **Lưu cấu hình**, rồi thêm kênh
-
-Extension ID cố định là **`meifbaclchfimfdjmpgpkehniloimnfa`** — nhờ trường `"key"` trong
-`manifest.json`, ID không đổi giữa các lần cài lại. OAuth client ID gắn với ID này nên
-**đừng xoá trường `key`**.
-
-### 3. (Tuỳ chọn) Bật tính năng tải danh sách đã subscribe
-
-Làm theo [docs/OAUTH-SETUP.md](docs/OAUTH-SETUP.md). Bỏ qua cũng được — thêm kênh thủ công
-vẫn đủ dùng, và popup sẽ hiện nhắc nhở thay vì báo lỗi khó hiểu.
-
----
+Ứng dụng độc lập, không liên kết, tài trợ hoặc bảo trợ bởi YouTube hay Google LLC.
 
 ## Cách hoạt động
 
-Hai vòng lặp chạy độc lập trong service worker:
+Extension có hai vòng kiểm tra:
 
-**Vòng 1 — phát hiện video mới (mặc định 60 giây)**
-Tải RSS feed `youtube.com/feeds/videos.xml?channel_id=…` của từng kênh. Feed này **miễn phí,
-không cần API key và không tính vào quota**, nên theo dõi bao nhiêu kênh cũng được. Dùng
-`If-None-Match` nên phần lớn lần gọi trả 304 rỗng. Video ID chưa từng thấy → đẩy vào hàng chờ.
+1. **Phát hiện nội dung mới** — đọc feed video của từng channel ID theo chu kỳ (mặc định 60 giây). ID video mới được đưa vào hàng chờ.
+2. **Phân loại trạng thái** — dùng YouTube Data API v3 qua **API key của người dùng** hoặc **OAuth Google tuỳ chọn** để gọi `videos.list`, xác định video thường / livestream đang phát / livestream sắp phát. Mặc định kiểm tra hàng chờ mỗi 30 giây.
 
-**Vòng 2 — theo dõi trạng thái live (mặc định 30 giây)**
-Gom toàn bộ ID đang chờ vào **một** lệnh `videos.list` (1 unit, tối đa 50 ID mỗi lần):
+Không còn cơ chế tải HTML của trang kênh hoặc trang `watch` để suy đoán dữ liệu. Các thao tác tra cứu handle/tên kênh và phân loại video dùng endpoint chính thức của YouTube Data API.
 
-| Trạng thái | Hành động |
-|---|---|
-| Video thường | Mở tab (nếu kênh đặt "Mọi video") |
-| Livestream **đang phát** | **Mở tab ngay** + thông báo 🔴 |
-| Livestream **mới lên lịch** | Giữ trong hàng chờ, canh tiếp |
-| Video bị xoá/ẩn | Bỏ khỏi hàng chờ |
+### Thêm kênh
 
-Vì sao phải có vòng 2: livestream xuất hiện trong RSS **ngay từ lúc được lên lịch**, rất lâu
-trước khi lên sóng. Không cơ chế push nào — kể cả WebSub/PubSubHubbub — báo thời điểm chuyển
-sang live, nên bắt buộc phải poll trạng thái video. Mở tab lúc thấy trong feed sẽ chỉ mở vào
-màn hình đếm ngược.
+- Dán channel ID dạng `UC...` hoặc URL `/channel/UC...`: dùng được không cần Google sign-in; extension lấy thông tin cơ bản từ feed.
+- Dán `@handle`, URL `/user/...`, `/c/...` hoặc tìm theo tên: cần API key hoặc một phiên OAuth Google đang kết nối để tra cứu bằng YouTube Data API.
+- Chọn **Kết nối Google & tải kênh đã đăng ký**: hoàn toàn tuỳ chọn. Extension yêu cầu duy nhất scope chỉ đọc `https://www.googleapis.com/auth/youtube.readonly` để tải subscriptions và gọi YouTube Data API trong phiên hiện tại.
 
-**Quota:** khi hàng chờ rỗng thì vòng 2 không gọi API lần nào. Thực tế phần lớn thời gian tốn
-**0 unit**; trường hợp xấu nhất ~2.880 unit/ngày, **không phụ thuộc số kênh** (hạn mức 10.000).
-Stream lên lịch còn xa thì chỉ kiểm tra mỗi 5 phút, chỉ siết xuống 30 giây khi sắp tới giờ.
+Google sign-in **không phải** đăng nhập vào Auto Mở Live và không cần thiết để mở extension hoặc website.
 
-**Chế độ theo từng kênh:** mỗi kênh chọn *Mọi video* hoặc *Chỉ livestream* trong popup.
+## Quyền riêng tư và OAuth
 
-**Không có API key?** Vẫn chạy được — vòng 1 hoạt động bình thường, chỉ là không phân biệt
-được livestream đã lên sóng hay chưa. Thêm kênh bằng URL, `@handle` hoặc `UC…` đều được.
+- Không có backend của nhà phát triển nhận Google user data.
+- OAuth access token chỉ được giữ trong `chrome.storage.session` và bị xoá khi phiên Chrome kết thúc hoặc người dùng chọn **Ngắt kết nối**.
+- Danh sách subscriptions vừa tải và thông tin kênh của tài khoản cũng chỉ giữ tạm trong session.
+- Khi ngắt kết nối, extension gửi token hiện có tới endpoint thu hồi của Google, xoá dữ liệu OAuth cục bộ và xoá các kênh đã được thêm trực tiếp từ danh sách subscriptions.
+- API key do người dùng nhập được lưu trong `chrome.storage.local` cho tới khi người dùng xoá/gỡ extension.
 
-**Giới hạn Chrome:** `chrome.alarms` không cho chạy dày hơn 30 giây với extension đã đóng gói.
+Privacy Policy: https://youtube-notification.chuan-nv.com/privacy-policy.html  
+Terms: https://youtube-notification.chuan-nv.com/terms.html
 
-## Phát triển
+## Cấu trúc repo
 
-```bash
-npm test                      # chạy test (node --test, không cần cài gì thêm)
-./scripts/pack-extension.sh   # tạo dist/*.zip để nộp Web Store
-./scripts/fetch-fonts.sh      # tải lại font cho web/ (chỉ khi đổi bộ font)
-npx wrangler deploy           # deploy web/ thủ công lên Cloudflare
+```text
+extension/          Chrome extension
+├── manifest.json
+├── background.js   service worker, OAuth, API, alarms, notifications
+├── popup.html/js/css
+├── lib/            logic parse/decision có test
+└── icons/
+
+tests/              node --test
+web/                homepage + Privacy Policy + Terms
+scripts/            pack extension / fetch fonts
+docs/               OAuth, publishing, Cloudflare
+.github/workflows/  CI + deploy web
+wrangler.jsonc      Cloudflare Workers static assets
 ```
 
-Mỗi lần push lên `main`, CI chạy test, kiểm tra manifest, cú pháp JS, `<meta charset>` của các
-trang web, và build sẵn file zip (tải ở tab **Actions** → artifact `extension-zip`).
+## Chạy local
 
-Logic thuần nằm ở `extension/lib/` để test được bằng Node mà không cần môi trường Chrome.
-Fixture là feed RSS thật — trong đó có một lỗi của chính YouTube: thẻ `<yt:channelId>` ở cấp
-feed bị thiếu tiền tố `UC`, nên parser phải lấy ID từ `<link>` thay vì tin thẻ đó.
+```bash
+npm test
+./scripts/pack-extension.sh
+```
+
+Load unpacked:
+
+1. Mở `chrome://extensions`.
+2. Bật **Developer mode**.
+3. Chọn **Load unpacked** và trỏ tới `extension/`.
+4. Mở popup, thêm channel ID trực tiếp hoặc cấu hình API key / OAuth theo `docs/OAUTH-SETUP.md`.
+
+Manifest hiện giữ trường `key` để extension ID local ổn định. Script đóng gói bản Store sẽ tự bỏ `key` khỏi ZIP phát hành.
+
+## Cấu hình Google Cloud
+
+Xem [docs/OAUTH-SETUP.md](docs/OAUTH-SETUP.md). Các giá trị branding phải đồng bộ:
+
+```text
+App name: Auto Mở Live
+Homepage: https://youtube-notification.chuan-nv.com/
+Privacy Policy: https://youtube-notification.chuan-nv.com/privacy-policy.html
+Terms: https://youtube-notification.chuan-nv.com/terms.html
+Authorized domain: chuan-nv.com
+OAuth scope: https://www.googleapis.com/auth/youtube.readonly
+```
+
+Không dùng hostname `www.youtube-notification.chuan-nv.com` trong OAuth Branding nếu hostname đó không phục vụ cùng website.
+
+## Lưu ý về OAuth implementation
+
+Source hiện tại dùng `chrome.identity.launchWebAuthFlow()` và client ID nằm ở hằng số `OAUTH_CLIENT_ID` trong `extension/popup.js`. Không có `manifest.oauth2` trong implementation hiện tại.
+
+Google/Chrome cũng hỗ trợ mô hình Chrome Extension OAuth client + `chrome.identity.getAuthToken()`. Chuyển sang mô hình đó cần tạo **credential mới** trong Google Cloud nên không được tự động thay trong patch này, tránh làm hỏng client ID đang dùng. Nếu muốn migrate, tạo credential mới trước rồi thay luồng một cách có kiểm thử.
+
+## Kiểm thử
+
+```bash
+npm test
+node --check extension/background.js
+node --check extension/popup.js
+python3 -m json.tool extension/manifest.json >/dev/null
+bash -n scripts/pack-extension.sh
+./scripts/pack-extension.sh
+```
+
+CI còn kiểm tra branding quan trọng, homepage/Privacy URL và ngăn việc đưa lại cách scrape HTML vào source.
 
 ## Xử lý sự cố
 
-**Chrome không load được extension** → kiểm tra `manifest.json` có khai báo `default_locale`
-mà thiếu thư mục `_locales/` không. CI đã có bước chặn lỗi này.
+**Thêm `@handle` báo cần credential** — đây là hành vi chủ đích. Hãy nhập API key, kết nối Google, hoặc dán channel ID `UC...` trực tiếp.
 
-**Popup báo lỗi đỏ dưới ô API key** → API key sai, chưa bật YouTube Data API v3, hoặc hết
-quota ngày. Tăng chu kỳ kiểm tra trong popup nếu hay chạm hạn mức.
+**Video nằm trong hàng chờ nhưng chưa được mở** — extension cần API key hoặc OAuth session để phân loại chính xác trạng thái bằng `videos.list`; nó không tải HTML trang YouTube để đoán trạng thái.
 
-**Nút đăng nhập Google báo `access_denied` / `invalid_client`** → xem lại
-[docs/OAUTH-SETUP.md](docs/OAUTH-SETUP.md): client ID đã dán đúng chưa, Extension ID trong
-Google Cloud có khớp `meifbaclchfimfdjmpgpkehniloimnfa` không, email đăng nhập có trong danh
-sách **Test users** không. Sửa `manifest.json` xong phải bấm **Reload (⟳)** ở
-`chrome://extensions`.
+**OAuth báo `redirect_uri_mismatch` / `invalid_client`** — kiểm tra client ID trong `extension/popup.js` và Redirect URI hiển thị ở popup theo `docs/OAUTH-SETUP.md`.
 
-**Không thấy notification** → kiểm tra quyền thông báo của Chrome ở cấp hệ điều hành
-(macOS: System Settings → Notifications → Google Chrome).
-
-**Trang web hiện chữ tiếng Việt vỡ (`KÃªnh`)** → thiếu `<meta charset="UTF-8">` trong file
-HTML. CI có bước chặn lỗi này trước khi deploy.
+**OAuth Verification báo homepage nằm sau login** — kiểm tra Cloud Console dùng chính xác `https://youtube-notification.chuan-nv.com/`, mở URL đó ở Incognito và xác nhận nội dung app + Privacy Policy hiện công khai mà không cần sign-in.

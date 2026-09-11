@@ -1,38 +1,31 @@
 #!/usr/bin/env bash
-# Đóng gói thư mục extension/ thành file zip nộp Chrome Web Store.
-#
-# Repo này chứa cả extension lẫn landing page. Script tồn tại để đảm bảo file zip
-# CHỈ chứa extension/ — nộp nhầm cả web/, docs/, .github/ sẽ bị Chrome Web Store
-# từ chối vì "extension chứa file không dùng đến".
-
+# Đóng gói extension/ thành ZIP nộp Chrome Web Store.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 SRC_DIR="extension"
 OUT_DIR="dist"
+VERSION=$(python3 -c "import json; print(json.load(open('$SRC_DIR/manifest.json', encoding='utf-8'))['version'])")
+OUT_FILE="$OUT_DIR/auto-mo-live-v$VERSION.zip"
 
-VERSION=$(python3 -c "import json;print(json.load(open('$SRC_DIR/manifest.json'))['version'])")
-OUT_FILE="$OUT_DIR/youtube-kenh-yeu-thich-v$VERSION.zip"
+python3 -m json.tool "$SRC_DIR/manifest.json" >/dev/null
 
-# manifest phải hợp lệ, nếu không Chrome Web Store từ chối ngay khi upload
-python3 -m json.tool "$SRC_DIR/manifest.json" > /dev/null
-
-# default_locale mà không có _locales/ khiến Chrome từ chối load extension.
-if python3 -c "import json,sys; sys.exit(0 if 'default_locale' in json.load(open('$SRC_DIR/manifest.json')) else 1)"; then
+if python3 -c "import json,sys; sys.exit(0 if 'default_locale' in json.load(open('$SRC_DIR/manifest.json', encoding='utf-8')) else 1)"; then
   if [ ! -d "$SRC_DIR/_locales" ]; then
-    echo "LỖI: manifest khai báo default_locale nhưng không có $SRC_DIR/_locales/" >&2
+    echo "LỖI: manifest khai báo default_locale nhưng thiếu $SRC_DIR/_locales/" >&2
     exit 1
   fi
 fi
 
-# Cảnh báo nếu quên thay OAuth client ID (không chặn — thêm kênh thủ công vẫn chạy)
-if grep -q "DÁN_OAUTH_CLIENT_ID" "$SRC_DIR/manifest.json"; then
-  echo "CẢNH BÁO: oauth2.client_id vẫn là placeholder — tính năng tải Subscriptions" >&2
-  echo "          sẽ không dùng được. Xem docs/OAUTH-SETUP.md." >&2
+# Implementation hiện tại dùng launchWebAuthFlow; client ID nằm trong popup.js.
+# Chỉ cảnh báo nếu chưa có client ID thực tế, không chặn các tính năng không OAuth.
+if grep -Eq 'const[[:space:]]+OAUTH_CLIENT_ID[[:space:]]*=[[:space:]]*"(YOUR_|DÁN_|)OAUTH' "$SRC_DIR/popup.js" || \
+   grep -q 'YOUR_CLIENT_ID.apps.googleusercontent.com' "$SRC_DIR/popup.js"; then
+  echo "CẢNH BÁO: OAUTH_CLIENT_ID trong popup.js vẫn là placeholder." >&2
+  echo "          Import subscriptions sẽ không hoạt động. Xem docs/OAUTH-SETUP.md." >&2
 fi
 
-# background.js import từ lib/ — thiếu thư mục này thì extension chết ngay khi load.
 if [ ! -d "$SRC_DIR/lib" ]; then
   echo "LỖI: thiếu $SRC_DIR/lib/" >&2
   exit 1
@@ -41,24 +34,26 @@ fi
 mkdir -p "$OUT_DIR"
 OUT_FILE_ABS="$(pwd)/$OUT_FILE"
 rm -f "$OUT_FILE_ABS"
-
 TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
 cp -a "$SRC_DIR/." "$TMP_DIR/"
 
-# Môi trường PRD: Xoá trường "key" khỏi manifest.json để nộp lên Store
-python3 -c "
+# Local manifest có key để giữ ID ổn định khi dev. Store tự quản lý signing/ID;
+# không nộp key dev vào gói production.
+python3 - <<PY
 import json
-with open('$TMP_DIR/manifest.json', 'r') as f:
+p = '$TMP_DIR/manifest.json'
+with open(p, encoding='utf-8') as f:
     d = json.load(f)
 if 'key' in d:
     del d['key']
-    print('Đã tự động xoá trường \"key\" khỏi manifest.json (Môi trường PRD)')
-with open('$TMP_DIR/manifest.json', 'w') as f:
-    json.dump(d, f, indent=2)
-"
+    print('Đã xoá trường "key" khỏi manifest production')
+with open(p, 'w', encoding='utf-8') as f:
+    json.dump(d, f, ensure_ascii=False, indent=2)
+    f.write('\n')
+PY
 
-( cd "$TMP_DIR" && zip -rq "$OUT_FILE_ABS" . -x ".DS_Store" -x "__MACOSX/*" )
-rm -rf "$TMP_DIR"
+( cd "$TMP_DIR" && zip -rq "$OUT_FILE_ABS" . -x '.DS_Store' -x '__MACOSX/*' )
 
 echo "Đã tạo $OUT_FILE ($(du -h "$OUT_FILE_ABS" | cut -f1))"
 echo

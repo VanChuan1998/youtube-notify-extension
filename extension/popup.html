@@ -2,18 +2,18 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
-  <title>Auto Mở Live Youtube</title>
+  <title>Auto Mở Live</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
   <header>
-    <h1>🔔 Kênh YouTube theo dõi</h1>
+    <h1>🔔 Auto Mở Live</h1>
   </header>
 
   <section class="card">
     <h2>Thêm kênh theo dõi</h2>
     <div class="row">
-      <input type="text" id="channelInput" placeholder="URL kênh, @handle, hoặc UC..." />
+      <input type="text" id="channelInput" placeholder="URL /channel/UC..., @handle, hoặc tên kênh" />
       <button id="addChannelBtn">Thêm</button>
     </div>
     <p id="addMsg" class="status"></p>
@@ -44,7 +44,7 @@
           <button id="toggleKeyVisibility" class="secondary" title="Hiện/ẩn">👁</button>
         </div>
         <p class="muted small">
-          Mặc định Extension tự động nhận diện Livestream mà không cần cấu hình. Tuy nhiên, nếu bạn thấy tính năng này chập chờn, bạn có thể tự tạo API Key của Google và dán vào đây để tăng độ ổn định.
+          Một trong hai cách sau là cần thiết để phân loại chính xác video/livestream: API key của bạn, hoặc kết nối Google ở phần bên dưới. API key chỉ được lưu cục bộ trong trình duyệt.
         </p>
       </div>
     </details>
@@ -68,25 +68,40 @@
     <p id="statusMsg" class="status"></p>
   </section>
 
-  <section class="card">
-    <h2>Lấy từ kênh đã đăng ký (Subscriptions)</h2>
-    <p class="muted small" id="redirectUriInfo" style="display:none; word-break: break-all; user-select: all; background: var(--bg-card); padding: 8px; border-radius: 4px; border: 1px solid var(--border);"></p>
-    
-    <div id="userInfoContainer" style="display: none; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 8px; background: var(--bg-card); border-radius: 6px; border: 1px solid var(--border);">
+  <section class="card" id="googleAccessCard">
+    <h2>Nhập kênh từ tài khoản Google — tuỳ chọn</h2>
+    <p class="oauth-disclosure">
+      <strong>Không cần đăng nhập Google để mở hoặc xem giao diện extension.</strong> Chỉ khi bạn tự chọn nút bên dưới, Auto Mở Live mới yêu cầu quyền chỉ đọc
+      <code>youtube.readonly</code> để đọc danh sách kênh YouTube bạn đã đăng ký và thông tin kênh YouTube của tài khoản. Quyền này không cho phép đăng, sửa hoặc xoá nội dung.
+    </p>
+    <p class="oauth-disclosure">
+      Access token và danh sách vừa tải chỉ được giữ tạm trong phiên Chrome. Chúng được gửi trực tiếp tới Google/YouTube API khi cần và không được gửi tới máy chủ của nhà phát triển.
+      <a href="https://youtube-notification.chuan-nv.com/privacy-policy.html" target="_blank" rel="noreferrer">Chính sách bảo mật</a>
+      · <a href="https://security.google.com/settings/security/permissions" target="_blank" rel="noreferrer">Quản lý quyền trên Google</a>
+    </p>
+
+    <p class="muted small" id="redirectUriInfo" style="display:none; word-break: break-all; user-select: all; background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border);"></p>
+
+    <div id="userInfoContainer" style="display: none; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 8px; background: var(--bg); border-radius: 6px; border: 1px solid var(--border);">
       <div style="display: flex; align-items: center; gap: 8px;">
-        <img id="userAvatar" src="" alt="Avatar" style="width: 32px; height: 32px; border-radius: 50%;">
+        <img id="userAvatar" src="" alt="Ảnh kênh YouTube" style="width: 32px; height: 32px; border-radius: 50%;">
         <span id="userName" style="font-weight: 600; font-size: 14px;"></span>
       </div>
-      <button id="logoutBtn" style="background: none; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; font-size: 12px; cursor: pointer; padding: 4px 8px;">Đăng xuất</button>
+      <button id="logoutBtn" class="disconnect-btn">Ngắt kết nối</button>
     </div>
 
-    <button id="loadSubsBtn" class="secondary full-width">Đăng nhập Google &amp; tải danh sách đã subscribe</button>
+    <button id="loadSubsBtn" class="secondary full-width">Kết nối Google &amp; tải kênh đã đăng ký</button>
     <p id="subsMsg" class="status"></p>
     <div id="subsList" class="channel-list"></div>
   </section>
 
   <footer>
     <span id="lastCheckInfo" class="muted"></span>
+    <div class="legal-links">
+      <a href="https://youtube-notification.chuan-nv.com/privacy-policy.html" target="_blank" rel="noreferrer">Privacy</a>
+      · <a href="https://youtube-notification.chuan-nv.com/terms.html" target="_blank" rel="noreferrer">Terms</a>
+      · <a href="https://www.youtube.com/t/terms" target="_blank" rel="noreferrer">YouTube Terms</a>
+    </div>
   </footer>
 
   <script type="module" src="popup.js"></script>
