@@ -35,13 +35,19 @@
   <section class="card">
     <h2>Cấu hình</h2>
 
-    <label for="apiKeyInput">YouTube Data API key <span class="muted">(tuỳ chọn)</span></label>
-    <div class="row">
-      <input type="password" id="apiKeyInput" placeholder="AIza... — để trống vẫn dùng được" />
-      <button id="toggleKeyVisibility" class="secondary" title="Hiện/ẩn">👁</button>
-    </div>
-    <p class="muted small">Không có key: vẫn theo dõi video mới qua RSS (miễn phí), nhưng
-      <strong>không phân biệt được livestream đã lên sóng hay mới lên lịch</strong>.</p>
+    <details style="margin-bottom: 12px;">
+      <summary style="cursor: pointer; font-weight: 600; color: var(--ink-soft);">Nâng cao (Không bắt buộc)</summary>
+      <div style="margin-top: 8px;">
+        <label for="apiKeyInput">YouTube Data API key <span class="muted">(Tuỳ chọn)</span></label>
+        <div class="row">
+          <input type="password" id="apiKeyInput" placeholder="AIza... — để trống vẫn dùng được" />
+          <button id="toggleKeyVisibility" class="secondary" title="Hiện/ẩn">👁</button>
+        </div>
+        <p class="muted small">
+          Mặc định Extension tự động nhận diện Livestream mà không cần cấu hình. Tuy nhiên, nếu bạn thấy tính năng này chập chờn, bạn có thể tự tạo API Key của Google và dán vào đây để tăng độ ổn định.
+        </p>
+      </div>
+    </details>
 
     <div class="row">
       <div class="field">
@@ -65,6 +71,15 @@
   <section class="card">
     <h2>Lấy từ kênh đã đăng ký (Subscriptions)</h2>
     <p class="muted small" id="redirectUriInfo" style="display:none; word-break: break-all; user-select: all; background: var(--bg-card); padding: 8px; border-radius: 4px; border: 1px solid var(--border);"></p>
+    
+    <div id="userInfoContainer" style="display: none; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 8px; background: var(--bg-card); border-radius: 6px; border: 1px solid var(--border);">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <img id="userAvatar" src="" alt="Avatar" style="width: 32px; height: 32px; border-radius: 50%;">
+        <span id="userName" style="font-weight: 600; font-size: 14px;"></span>
+      </div>
+      <button id="logoutBtn" style="background: none; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; font-size: 12px; cursor: pointer; padding: 4px 8px;">Đăng xuất</button>
+    </div>
+
     <button id="loadSubsBtn" class="secondary full-width">Đăng nhập Google &amp; tải danh sách đã subscribe</button>
     <p id="subsMsg" class="status"></p>
     <div id="subsList" class="channel-list"></div>

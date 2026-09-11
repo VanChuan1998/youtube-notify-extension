@@ -126,11 +126,18 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 // ---------- YouTube Data API ----------
 
-async function apiFetch(path, params, apiKey) {
+async function apiFetch(path, params, keyOrToken) {
   const url = new URL(`${API_BASE}${path}`);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  url.searchParams.set("key", apiKey);
-  const res = await fetch(url.toString());
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  
+  const headers = {};
+  if (keyOrToken && keyOrToken.startsWith("ya29.")) {
+     headers["Authorization"] = `Bearer ${keyOrToken}`;
+  } else if (keyOrToken) {
+     url.searchParams.set("key", keyOrToken);
+  }
+
+  const res = await fetch(url.toString(), { headers });
   const data = await res.json();
   if (!res.ok) {
     throw new Error((data && data.error && data.error.message) || `HTTP ${res.status}`);
@@ -148,6 +155,64 @@ async function fetchChannelInfoById(channelId, apiKey) {
     title: item.snippet.title,
     thumbnail: (thumbs.default || thumbs.medium || {}).url || "",
   };
+}
+
+function getAuthToken(interactive, clientId, prompt) {
+  return new Promise((resolve, reject) => {
+    const scopes = ["https://www.googleapis.com/auth/youtube.readonly"];
+    const redirectUrl = chrome.identity.getRedirectURL();
+    let authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(
+      clientId
+    )}&redirect_uri=${encodeURIComponent(
+      redirectUrl
+    )}&response_type=token&scope=${encodeURIComponent(scopes.join(" "))}`;
+    if (prompt) {
+      authUrl += `&prompt=${encodeURIComponent(prompt)}`;
+    }
+
+    chrome.identity.launchWebAuthFlow(
+      { url: authUrl, interactive },
+      (responseUrl) => {
+        if (chrome.runtime.lastError || !responseUrl) {
+          reject(new Error(chrome.runtime.lastError?.message || "Đăng nhập thất bại"));
+          return;
+        }
+        try {
+          const url = new URL(responseUrl);
+          const params = new URLSearchParams(url.hash.substring(1));
+          const token = params.get("access_token");
+          const expiresIn = parseInt(params.get("expires_in"), 10) || 3600;
+          if (token) {
+            resolve({ token, expiresIn });
+          } else {
+            reject(new Error("Không tìm thấy access token trong phản hồi"));
+          }
+        } catch (err) {
+          reject(err);
+        }
+      }
+    );
+  });
+}
+
+async function fetchUserInfo(token) {
+  const data = await apiFetch("/channels", { part: "snippet", mine: "true" }, token);
+  return data.items || [];
+}
+
+async function fetchSubscriptions(token) {
+  let items = [];
+  let pageToken = "";
+  do {
+    const params = { part: "snippet", mine: "true", maxResults: "50" };
+    if (pageToken) params.pageToken = pageToken;
+    const data = await apiFetch("/subscriptions", params, token);
+    if (data.items) {
+      items.push(...data.items);
+    }
+    pageToken = data.nextPageToken || "";
+  } while (pageToken);
+  return items;
 }
 
 // ---------- Phân giải input thành kênh ----------
@@ -247,7 +312,6 @@ async function discoverNewVideos() {
   }
 
   const pending = await getPending();
-  let anyError = "";
   let foundCount = 0;
 
   for (const ch of watched) {
@@ -302,12 +366,11 @@ async function discoverNewVideos() {
       ch.lastError = "";
     } catch (err) {
       ch.lastError = err.message || String(err);
-      anyError = `${ch.title || ch.id}: ${ch.lastError}`;
     }
   }
 
   await setStorage({ channels, pending });
-  await setStatus({ lastError: anyError, lastDiscoverAt: Date.now() });
+  await setStatus({ lastError: "", lastDiscoverAt: Date.now() });
 
   // Có video mới thì phân loại ngay, không đợi hết chu kỳ vòng 2.
   if (foundCount > 0) await checkPendingVideos();
@@ -336,14 +399,35 @@ async function checkPendingVideos() {
   }
 
   const apiKey = await getApiKey();
+  const { oauthToken } = await getStorage({ oauthToken: "" });
 
   // Chế độ RSS-only: không có key thì không phân biệt được live/upcoming.
   // Coi mọi video như video thường và xử lý theo mode của kênh.
-  if (!apiKey) {
-    await handleClassified(
-      due.map((e) => ({ entry: e, state: "none" })),
-      pending
-    );
+  if (!apiKey && !oauthToken) {
+    // Chế độ không key/token: Scraping HTML trực tiếp để phát hiện livestream
+    const classified = [];
+    try {
+      for (const e of due) {
+        const res = await fetch(`https://www.youtube.com/watch?v=${e.videoId}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const html = await res.text();
+        e.lastCheckedAt = now;
+        
+        let state = "none";
+        if (html.includes('"isLiveNow":true') || html.includes('"isLive":true')) {
+          state = "live";
+        } else if (html.includes('"isUpcoming":true')) {
+          state = "upcoming";
+        }
+        classified.push({ entry: e, state });
+      }
+      await handleClassified(classified, pending, channels);
+      await setStatus({ lastError: "", lastLiveCheckAt: now });
+    } catch (err) {
+      // Nếu scrape lỗi, fallback coi như video thường
+      await handleClassified(due.map((e) => ({ entry: e, state: "none" })), pending);
+      await setStatus({ lastError: "Scrape lỗi: " + err.message, lastLiveCheckAt: now });
+    }
     return;
   }
 
@@ -355,7 +439,7 @@ async function checkPendingVideos() {
       const data = await apiFetch(
         "/videos",
         { part: "snippet,liveStreamingDetails", id: batch.join(",") },
-        apiKey
+        apiKey || oauthToken
       );
 
       const byId = new Map((data.items || []).map((it) => [it.id, it]));
@@ -495,6 +579,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           await ensureAlarms();
           sendResponse({ ok: true });
           return;
+        case "fetchSubscriptions": {
+          try {
+            const { oauthToken, oauthTokenExpires } = await getStorage({ oauthToken: "", oauthTokenExpires: 0 });
+            let token = oauthToken;
+            
+            if (message.prompt || !token || Date.now() >= oauthTokenExpires) {
+              let authRes;
+              try {
+                authRes = await getAuthToken(false, message.clientId, message.prompt);
+              } catch (err) {
+                authRes = await getAuthToken(true, message.clientId, message.prompt);
+              }
+              token = authRes.token;
+              await setStorage({ 
+                oauthToken: token, 
+                oauthTokenExpires: Date.now() + (authRes.expiresIn * 1000) - 60000 // trừ hao 1 phút
+              });
+            }
+            
+            const subs = await fetchSubscriptions(token);
+            sendResponse({ ok: true, subscriptions: subs });
+          } catch (err) {
+            sendResponse({ ok: false, error: err.message || String(err) });
+          }
+          return;
+        }
         default:
           sendResponse({ ok: false, error: "Unknown message type: " + message.type });
       }

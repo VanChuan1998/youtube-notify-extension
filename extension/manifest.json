@@ -31,5 +31,8 @@
     "https://www.googleapis.com/*",
     "https://www.youtube.com/*"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src https://www.googleapis.com https://www.youtube.com;"
+  },
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArX/6qboRC+Fywvrbswit1TfKSMIwz2Sl5MyHHLPQSQnesVkiq0Fq/7jkrBTi2xbwEnr6onj7KFy78uU/OvDQtih0w7A9cxCaAK2VlBlZN1fGjOo6WYDpCe3oyL8wqGD1AzZ/UL3EjrgTBsavbspxRYPYVKq+h3+BjrMJLlVE7Hk1CqS2n/NTpqD7PAoQgxI+BRU17BI9K1NMYkqgqF+gg4ENRs3XysyKS9jbjtFCLog9PO11c70WL/JRdiX6uM0ZyKHiAN+z+bHDHyouKEfI+7vBW41seyLYupMZxyLr1ij3oN0/Sb/yktr3C26am7jXzpc0A+TxqdZA2PIQh/JVLwIDAQAB"
 }
