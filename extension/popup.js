@@ -1,5 +1,7 @@
 // popup.js
 
+const OAUTH_CLIENT_ID = "736665623723-ovim8oer8j3n4de3otggf72oebgeursn.apps.googleusercontent.com";
+
 const $ = (id) => document.getElementById(id);
 
 const apiKeyInput = $("apiKeyInput");
@@ -53,12 +55,10 @@ function setMsg(el, text, kind) {
   el.className = "status" + (kind ? " " + kind : "");
 }
 
-// client_id mặc định trong manifest là chỗ giữ chỗ; OAuth chỉ chạy sau khi người
-// dùng thay bằng client_id thật (xem docs/OAUTH-SETUP.md).
+// OAuth chỉ chạy sau khi có client_id hợp lệ.
 function isOAuthConfigured() {
-  const oauth2 = chrome.runtime.getManifest().google_oauth2 || chrome.runtime.getManifest().oauth2;
-  const id = (oauth2 && oauth2.client_id) || "";
-  return !!id && id.endsWith(".apps.googleusercontent.com") && !/[^\x00-\x7F]/.test(id);
+  const id = OAUTH_CLIENT_ID;
+  return !!id && id.endsWith(".apps.googleusercontent.com") && !/[^\x00-\x7F]/.test(id) && !id.includes("MÃ_CLIENT_ID");
 }
 
 function timeAgo(ts) {
@@ -312,14 +312,12 @@ async function renderPending() {
 
 function getAuthToken(interactive) {
   return new Promise((resolve, reject) => {
-    const manifest = chrome.runtime.getManifest();
-    const oauth2 = manifest.google_oauth2 || manifest.oauth2;
-    if (!oauth2 || !oauth2.client_id) {
-      return reject(new Error("Không tìm thấy cấu hình OAuth trong manifest."));
+    if (!isOAuthConfigured()) {
+      return reject(new Error("Không tìm thấy cấu hình OAuth Client ID."));
     }
 
-    const clientId = oauth2.client_id;
-    const scopes = (oauth2.scopes || []).join(' ');
+    const clientId = OAUTH_CLIENT_ID;
+    const scopes = "https://www.googleapis.com/auth/youtube.readonly";
     const redirectUrl = chrome.identity.getRedirectURL();
 
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
