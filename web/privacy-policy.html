@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chính Sách Bảo Mật — Kênh YouTube Yêu Thích</title>
+<title>YouTube Kênh Yêu Thích - Tự Mở Video Mới</title>
 <meta name="description" content="Chính sách bảo mật của extension Kênh Yêu Thích: dữ liệu lưu cục bộ trên máy bạn, không thu thập, không bán, không gửi đi đâu.">
 <meta name="robots" content="index, follow">
 <link rel="stylesheet" href="fonts.css">
@@ -203,7 +203,7 @@
     <div class="mark">
       <a href="/" style="display:flex; color:white; text-decoration:none;"><svg viewBox="0 0 24 24" fill="none"><path d="M9 7l7 5-7 5V7z" fill="#fff"/></svg></a>
     </div>
-    <span class="name">YouTube Kênh Yêu Thích</span>
+    <span class="name">YouTube Kênh Yêu Thích - Tự Mở Video Mới</span>
   </div>
 
   <h1>Chính sách bảo mật</h1>
@@ -270,7 +270,7 @@
       </tr>
       <tr>
         <td>Token OAuth Google <em>(chỉ khi bạn bấm "tải danh sách đã subscribe")</em></td>
-        <td>Đọc danh sách kênh bạn đã đăng ký. Token do Chrome quản lý (<code>chrome.identity</code>), extension không lưu lại.</td>
+        <td>Đọc danh sách kênh bạn đã đăng ký. Ứng dụng yêu cầu quyền (scope) <code>https://www.googleapis.com/auth/youtube.readonly</code> để gọi API lấy danh sách này. Token do Chrome quản lý (<code>chrome.identity</code>), extension chỉ dùng nội bộ để hiển thị danh sách và không lưu lại hay gửi đi đâu.</td>
       </tr>
     </table>
 
@@ -361,7 +361,7 @@
       </tr>
       <tr>
         <td>Google OAuth token <em>(only if you use "load my subscriptions")</em></td>
-        <td>Read-only access to your subscriptions list. Managed by Chrome's <code>chrome.identity</code> API; never stored by the Extension.</td>
+        <td>Read-only access to your subscriptions list. The app requests the <code>https://www.googleapis.com/auth/youtube.readonly</code> scope to fetch your subscribed channels so you can easily add them. The token is managed by Chrome's <code>chrome.identity</code> API; it is only used locally to populate the UI and is never stored or sent anywhere by the Extension.</td>
       </tr>
     </table>
 
