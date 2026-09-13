@@ -142,3 +142,23 @@ jobs:
             echo '::error::Phát hiện logic scrape HTML YouTube; dùng YouTube Data API thay thế.'
             exit 1
           fi
+
+      - name: OAuth token không được lưu bền và phải hỗ trợ silent restore
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('extension/background.js').read_text(encoding='utf-8')
+          errors = []
+          if 'getAuthToken(false, clientId, "none")' not in s:
+              errors.append('thiếu silent OAuth restore với prompt=none')
+          if 'googleOAuthAuthorized: true' not in s:
+              errors.append('thiếu persistent non-sensitive OAuth grant marker')
+          if 'removeStorage(["googleOAuthAuthorized", "googleOAuthClientId"])' not in s:
+              errors.append('Disconnect chưa xoá OAuth grant marker cục bộ')
+          if 'setStorage({ oauthToken' in s or 'chrome.storage.local.set({ oauthToken' in s:
+              errors.append('không được lưu OAuth access token trong chrome.storage.local')
+          if errors:
+              for e in errors: print('::error::' + e)
+              raise SystemExit(1)
+          print('OK — access token chỉ ở session, có silent restore và Disconnect cleanup')
+          PY

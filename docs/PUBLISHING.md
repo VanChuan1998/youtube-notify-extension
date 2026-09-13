@@ -55,7 +55,7 @@ Không có remote code. Không tải JavaScript từ CDN.
 
 Nên nói rõ:
 
-> Google sign-in is optional. If the user chooses “Connect Google & load subscribed channels,” Auto Mở Live requests the read-only `youtube.readonly` scope to retrieve subscriptions and use the YouTube Data API. The extension does not upload, edit, or delete YouTube content. OAuth access tokens are kept only in Chrome session storage and are not sent to a developer-operated server.
+> Google sign-in is optional. If the user chooses “Connect Google & load subscribed channels,” Auto Mở Live requests the read-only `youtube.readonly` scope to retrieve subscriptions and use the YouTube Data API. The extension does not upload, edit, or delete YouTube content. OAuth access tokens are kept only in browser session storage and are not sent to a developer-operated server. After a browser restart, the extension may silently request a new access token from an existing Google grant/session; it does not persist the access token in local storage.
 
 ## 6. Screenshots/video cho verification
 

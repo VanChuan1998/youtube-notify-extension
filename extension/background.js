@@ -53,6 +53,10 @@ function setStorage(items) {
   return new Promise((resolve) => chrome.storage.local.set(items, resolve));
 }
 
+function removeStorage(keys) {
+  return new Promise((resolve) => chrome.storage.local.remove(keys, resolve));
+}
+
 function getSessionStorage(keys) {
   return new Promise((resolve) => chrome.storage.session.get(keys, resolve));
 }
@@ -65,16 +69,61 @@ function removeSessionStorage(keys) {
   return new Promise((resolve) => chrome.storage.session.remove(keys, resolve));
 }
 
-async function getCachedOAuthToken() {
-  const { oauthToken, oauthTokenExpires } = await getSessionStorage({
-    oauthToken: "",
-    oauthTokenExpires: 0,
+async function saveOAuthSession(authRes, clientId) {
+  const token = authRes && authRes.token ? authRes.token : "";
+  if (!token) return "";
+
+  const expiresIn = Number(authRes.expiresIn) || 3600;
+  await setSessionStorage({
+    oauthToken: token,
+    // Trừ 60 giây để không dùng token ở sát thời điểm hết hạn.
+    oauthTokenExpires: Date.now() + (expiresIn * 1000) - 60000,
   });
-  if (!oauthToken || !oauthTokenExpires || Date.now() >= oauthTokenExpires) {
-    await removeSessionStorage(["oauthToken", "oauthTokenExpires"]);
+
+  // Chỉ lưu marker/client ID không nhạy cảm. Access token vẫn chỉ nằm trong session.
+  if (clientId) {
+    await setStorage({
+      googleOAuthAuthorized: true,
+      googleOAuthClientId: clientId,
+    });
+  }
+
+  return token;
+}
+
+async function restoreOAuthTokenSilently(clientIdOverride = "") {
+  const { googleOAuthAuthorized, googleOAuthClientId } = await getStorage({
+    googleOAuthAuthorized: false,
+    googleOAuthClientId: "",
+  });
+
+  const clientId = (clientIdOverride || googleOAuthClientId || "").trim();
+  if (!googleOAuthAuthorized || !clientId) return "";
+
+  try {
+    // prompt=none + interactive=false: nếu grant và Google browser session còn hợp lệ,
+    // Google cấp access token mới mà không hiện cửa sổ đăng nhập/consent.
+    const authRes = await getAuthToken(false, clientId, "none");
+    return await saveOAuthSession(authRes, clientId);
+  } catch (err) {
+    console.debug("Silent Google OAuth restore unavailable:", err?.message || String(err));
     return "";
   }
-  return oauthToken;
+}
+
+async function getCachedOAuthToken({ clientId = "", forceRefresh = false } = {}) {
+  if (!forceRefresh) {
+    const { oauthToken, oauthTokenExpires } = await getSessionStorage({
+      oauthToken: "",
+      oauthTokenExpires: 0,
+    });
+    if (oauthToken && oauthTokenExpires && Date.now() < oauthTokenExpires) {
+      return oauthToken;
+    }
+  }
+
+  await removeSessionStorage(["oauthToken", "oauthTokenExpires"]);
+  return restoreOAuthTokenSilently(clientId);
 }
 
 async function getChannels() {
@@ -145,7 +194,8 @@ async function ensureAlarms() {
 
 async function clearLegacyOAuthStorage() {
   // Trước v1.1.1 access token từng được lưu bền trong chrome.storage.local.
-  // Từ bản này token chỉ nằm trong chrome.storage.session và mất khi Chrome đóng.
+  // Từ v1.1.1 token chỉ nằm trong chrome.storage.session. Từ v1.1.2, sau khi
+  // browser restart extension có thể silent re-auth bằng grant Google đã tồn tại.
   await chrome.storage.local.remove(["oauthToken", "oauthTokenExpires", "oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
 }
 
@@ -168,33 +218,54 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 // ---------- YouTube Data API ----------
 
-async function apiFetch(path, params, credential = {}) {
-  const url = new URL(`${API_BASE}${path}`);
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+async function apiFetch(path, params, credential = {}, options = {}) {
+  const requestOnce = async (activeCredential) => {
+    const url = new URL(`${API_BASE}${path}`);
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
 
-  const headers = {};
-  if (credential.oauthToken) {
-    headers["Authorization"] = `Bearer ${credential.oauthToken}`;
-  } else if (credential.apiKey) {
-    url.searchParams.set("key", credential.apiKey);
-  }
+    const headers = {};
+    if (activeCredential.oauthToken) {
+      headers["Authorization"] = `Bearer ${activeCredential.oauthToken}`;
+    } else if (activeCredential.apiKey) {
+      url.searchParams.set("key", activeCredential.apiKey);
+    }
 
-  const res = await fetch(url.toString(), { headers });
-  const text = await res.text();
-  let data;
+    const res = await fetch(url.toString(), { headers });
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      const err = new Error(`HTTP ${res.status}: phản hồi không phải JSON`);
+      err.status = res.status;
+      throw err;
+    }
+    if (!res.ok) {
+      const err = new Error((data && data.error && data.error.message) || `HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  };
+
   try {
-    data = JSON.parse(text);
-  } catch {
-    const err = new Error(`HTTP ${res.status}: phản hồi không phải JSON`);
-    err.status = res.status;
+    return await requestOnce(credential);
+  } catch (err) {
+    // Access token có thể hết hạn trước mốc local hoặc bị Google vô hiệu hoá.
+    // Thử silent re-auth đúng một lần rồi retry request.
+    if (
+      err &&
+      err.status === 401 &&
+      credential.oauthToken &&
+      options.retryOAuth !== false
+    ) {
+      const refreshedToken = await getCachedOAuthToken({ forceRefresh: true });
+      if (refreshedToken) {
+        return requestOnce({ ...credential, oauthToken: refreshedToken });
+      }
+    }
     throw err;
   }
-  if (!res.ok) {
-    const err = new Error((data && data.error && data.error.message) || `HTTP ${res.status}`);
-    err.status = res.status;
-    throw err;
-  }
-  return data;
 }
 
 async function fetchChannelInfoById(channelId, credential = {}) {
@@ -217,7 +288,7 @@ function getAuthToken(interactive, clientId, prompt) {
       clientId
     )}&redirect_uri=${encodeURIComponent(
       redirectUrl
-    )}&response_type=token&scope=${encodeURIComponent(scopes.join(" "))}`;
+    )}&response_type=token&scope=${encodeURIComponent(scopes.join(" "))}&include_granted_scopes=true`;
     if (prompt) {
       authUrl += `&prompt=${encodeURIComponent(prompt)}`;
     }
@@ -268,6 +339,28 @@ async function fetchSubscriptions(token) {
     pages++;
   } while (pageToken && pages < MAX_PAGES);
   return items;
+}
+
+async function loadOAuthAccountData(token) {
+  const rawSubs = await fetchSubscriptions(token);
+  const subs = rawSubs.map((item) => ({
+    id: item.snippet.resourceId.channelId,
+    title: item.snippet.title,
+    thumbnail: (item.snippet.thumbnails?.default || item.snippet.thumbnails?.medium || {}).url || "",
+  }));
+
+  const userInfoData = await fetchUserInfo(token);
+  let oauthUser = null;
+  if (userInfoData && userInfoData.length > 0) {
+    const profile = userInfoData[0].snippet;
+    oauthUser = {
+      name: profile.title,
+      picture: profile.thumbnails?.default?.url || "",
+    };
+  }
+
+  await setSessionStorage({ fetchedSubs: subs, oauthUser, oauthDataFetchedAt: Date.now() });
+  return { subs, oauthUser };
 }
 
 // ---------- Phân giải input thành kênh ----------
@@ -683,48 +776,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         case "fetchSubscriptions": {
           try {
-            const cached = await getSessionStorage({ oauthToken: "", oauthTokenExpires: 0 });
-            let token = cached.oauthToken;
+            let token = await getCachedOAuthToken({ clientId: message.clientId });
 
-            if (message.prompt || !token || Date.now() >= cached.oauthTokenExpires) {
-              let authRes;
-              try {
-                authRes = await getAuthToken(false, message.clientId, message.prompt);
-              } catch {
-                authRes = await getAuthToken(true, message.clientId, message.prompt);
-              }
-              token = authRes.token;
-              await setSessionStorage({
-                oauthToken: token,
-                oauthTokenExpires: Date.now() + (authRes.expiresIn * 1000) - 60000,
-              });
+            // Khi người dùng chủ động bấm nút và silent restore không khả dụng,
+            // mới mở OAuth UI. Không ép prompt=consent; Google tự hiển thị consent khi cần.
+            if (message.forceInteractive || !token) {
+              const authRes = await getAuthToken(true, message.clientId);
+              token = await saveOAuthSession(authRes, message.clientId);
             }
-            
-            const rawSubs = await fetchSubscriptions(token);
-            const subs = rawSubs.map(item => ({
-              id: item.snippet.resourceId.channelId,
-              title: item.snippet.title,
-              thumbnail: (item.snippet.thumbnails?.default || item.snippet.thumbnails?.medium || {}).url || ""
-            }));
 
-            const userInfoData = await fetchUserInfo(token);
-            let oauthUser = null;
-            if (userInfoData && userInfoData.length > 0) {
-              const profile = userInfoData[0].snippet;
-              oauthUser = {
-                name: profile.title,
-                picture: profile.thumbnails?.default?.url || ""
-              };
-            }
-            
-            await setSessionStorage({ fetchedSubs: subs, oauthUser, oauthDataFetchedAt: Date.now() });
+            const { subs, oauthUser } = await loadOAuthAccountData(token);
             sendResponse({ ok: true, subs, oauthUser });
           } catch (err) {
             if (err && err.status === 401) {
-              await removeSessionStorage(["oauthToken", "oauthTokenExpires"]);
-              await removeSessionStorage(["oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
+              await removeSessionStorage(["oauthToken", "oauthTokenExpires", "oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
             }
             sendResponse({ ok: false, error: err.message || String(err) });
+          }
+          return;
+        }
+        case "restoreOAuthSession": {
+          try {
+            const token = await getCachedOAuthToken({ clientId: message.clientId });
+            if (!token) {
+              sendResponse({ ok: true, connected: false });
+              return;
+            }
+
+            const { subs, oauthUser } = await loadOAuthAccountData(token);
+            sendResponse({ ok: true, connected: true, subs, oauthUser });
+          } catch (err) {
+            sendResponse({ ok: true, connected: false, error: err.message || String(err) });
           }
           return;
         }
@@ -734,13 +816,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           let revokeWarning = "";
 
           if ((!token || Date.now() >= cached.oauthTokenExpires) && message.clientId) {
-            try {
-              const authRes = await getAuthToken(false, message.clientId);
-              token = authRes.token;
-            } catch {
-              // Không bật cửa sổ đăng nhập chỉ để ngắt kết nối. Người dùng vẫn có
-              // thể thu hồi quyền từ trang Google Account được liên kết trong UI.
-            }
+            // Chỉ thử silent re-auth để lấy token phục vụ revoke; không bật UI chỉ
+            // vì người dùng đang ngắt kết nối.
+            token = await getCachedOAuthToken({ clientId: message.clientId, forceRefresh: true });
           }
 
           if (token) {
@@ -768,6 +846,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           await setStorage({ channels });
           await removeSessionStorage(["oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
+          await removeStorage(["googleOAuthAuthorized", "googleOAuthClientId"]);
           sendResponse({ ok: true, warning: revokeWarning });
           return;
         }

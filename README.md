@@ -24,7 +24,9 @@ Google sign-in **không phải** đăng nhập vào Auto Mở Live và không c�
 ## Quyền riêng tư và OAuth
 
 - Không có backend của nhà phát triển nhận Google user data.
-- OAuth access token chỉ được giữ trong `chrome.storage.session` và bị xoá khi phiên Chrome kết thúc hoặc người dùng chọn **Ngắt kết nối**.
+- OAuth access token chỉ được giữ trong `chrome.storage.session` và bị xoá khi phiên Chrome/Edge kết thúc hoặc người dùng chọn **Ngắt kết nối**.
+- Sau khi trình duyệt khởi động lại, extension chỉ lưu một marker không nhạy cảm cho biết người dùng từng cấp quyền và thử `prompt=none` + `interactive:false` để lấy access token mới từ grant/session Google hiện có. Access token không được ghi vào `chrome.storage.local`.
+- Nếu silent re-auth không khả dụng (đã logout Google, xoá cookie, revoke quyền...), extension yêu cầu người dùng kết nối lại.
 - Danh sách subscriptions vừa tải và thông tin kênh của tài khoản cũng chỉ giữ tạm trong session.
 - Khi ngắt kết nối, extension gửi token hiện có tới endpoint thu hồi của Google, xoá dữ liệu OAuth cục bộ và xoá các kênh đã được thêm trực tiếp từ danh sách subscriptions.
 - API key do người dùng nhập được lưu trong `chrome.storage.local` cho tới khi người dùng xoá/gỡ extension.

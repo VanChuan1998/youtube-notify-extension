@@ -267,8 +267,13 @@
       </tr>
       <tr>
         <td>OAuth access token và thời hạn token</td>
-        <td><code>chrome.storage.session</code>; chỉ tồn tại trong phiên Chrome và bị xoá khi ngắt kết nối hoặc phiên kết thúc</td>
+        <td><code>chrome.storage.session</code>; chỉ tồn tại trong phiên trình duyệt và bị xoá khi ngắt kết nối hoặc phiên kết thúc</td>
         <td>Gọi YouTube Data API thay mặt bạn trong phạm vi <code>youtube.readonly</code>.</td>
+      </tr>
+      <tr>
+        <td>Marker kết nối OAuth và OAuth client ID (không chứa access token, mật khẩu hay client secret)</td>
+        <td><code>chrome.storage.local</code>; tồn tại tới khi bạn bấm <strong>Ngắt kết nối</strong>, xoá dữ liệu extension hoặc gỡ extension</td>
+        <td>Cho phép Extension biết rằng bạn từng cấp quyền và thử xin access token mới ở chế độ không tương tác (<code>prompt=none</code>) sau khi trình duyệt khởi động lại hoặc token hết hạn.</td>
       </tr>
       <tr>
         <td>Danh sách subscriptions vừa tải và thông tin cơ bản của kênh YouTube thuộc tài khoản</td>
@@ -283,7 +288,7 @@
     </table>
 
     <div class="callout">
-      Nhà phát triển <strong>không nhận, không bán và không chia sẻ</strong> Google user data qua một backend riêng. Dữ liệu OAuth chỉ được truyền trực tiếp giữa Extension và Google/YouTube khi cần cho chức năng đã mô tả. Extension không đọc mật khẩu Google, cookie đăng nhập, lịch sử duyệt web hay nội dung của các tab khác.
+      Nhà phát triển <strong>không nhận, không bán và không chia sẻ</strong> Google user data qua một backend riêng. Dữ liệu OAuth chỉ được truyền trực tiếp giữa Extension và Google/YouTube khi cần cho chức năng đã mô tả. Access token không được ghi vào <code>chrome.storage.local</code>. Sau khi trình duyệt khởi động lại, Extension có thể yêu cầu Google cấp access token mới ở chế độ không tương tác nếu quyền OAuth vẫn còn hiệu lực và Google có thể xác thực người dùng mà không cần tương tác. Extension không đọc mật khẩu Google, cookie đăng nhập, lịch sử duyệt web hay nội dung của các tab khác.
     </div>
 
     <h2>Quyền (permissions) và lý do cần dùng</h2>
@@ -334,13 +339,14 @@
       <tr><th>Data</th><th>Storage / retention</th><th>Purpose</th></tr>
       <tr><td>Your YouTube Data API key <em>(optional)</em></td><td><code>chrome.storage.local</code> until removed by you or the Extension is uninstalled</td><td>Call public YouTube Data API endpoints for channel lookup and video/livestream classification.</td></tr>
       <tr><td>Your tracked-channel configuration, seen video IDs, pending livestream queue and RSS metadata</td><td><code>chrome.storage.local</code></td><td>Operate tracking, avoid reopening old videos and manage pending items.</td></tr>
-      <tr><td>OAuth access token and expiry</td><td><code>chrome.storage.session</code>; only for the current Chrome session and deleted on disconnect/session end</td><td>Call the YouTube Data API on your behalf within the <code>youtube.readonly</code> scope.</td></tr>
+      <tr><td>OAuth access token and expiry</td><td><code>chrome.storage.session</code>; only for the current browser session and deleted on disconnect/session end</td><td>Call the YouTube Data API on your behalf within the <code>youtube.readonly</code> scope.</td></tr>
+      <tr><td>OAuth connection marker and OAuth client ID (no access token, password, or client secret)</td><td><code>chrome.storage.local</code> until you disconnect, clear Extension data, or uninstall</td><td>Let the Extension know that authorization was previously granted so it can try a non-interactive <code>prompt=none</code> authorization after browser restart or token expiry.</td></tr>
       <tr><td>The subscriptions list just fetched and basic information about the account's YouTube channel</td><td><code>chrome.storage.session</code>; temporary for the current Chrome session</td><td>Display the list so you can choose channels to add.</td></tr>
       <tr><td>Channels you explicitly add from the subscriptions list</td><td><code>chrome.storage.local</code>, marked with source <code>subscription</code></td><td>Become tracking configuration and are deleted from the configuration when you use <strong>Disconnect</strong>.</td></tr>
     </table>
 
     <div class="callout">
-      The developer <strong>does not receive, sell, or share</strong> Google user data through a developer-operated backend. OAuth data is transmitted only between the Extension and Google/YouTube as required for the disclosed functionality. The Extension does not read your Google password, sign-in cookies, browsing history, or the contents of other tabs.
+      The developer <strong>does not receive, sell, or share</strong> Google user data through a developer-operated backend. OAuth data is transmitted only between the Extension and Google/YouTube as required for the disclosed functionality. Access tokens are never written to <code>chrome.storage.local</code>. After a browser restart, the Extension may ask Google for a new access token non-interactively when the existing OAuth grant remains valid and Google can authenticate the user without interaction. The Extension does not read your Google password, sign-in cookies, browsing history, or the contents of other tabs.
     </div>
 
     <h2>Permissions and why they are needed</h2>

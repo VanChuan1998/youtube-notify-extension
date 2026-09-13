@@ -391,12 +391,10 @@ loadSubsBtn.addEventListener("click", async () => {
   loadSubsBtn.disabled = true;
   setMsg(subsMsg, "Đang mở cửa sổ đăng nhập Google...", "");
   
-  // Lần kết nối đầu tiên hiển thị consent rõ ràng. Access token được background
-  // giữ trong chrome.storage.session và tự lấy lại khi cần.
-  const isLoggedIn = userInfoContainer.style.display !== "none";
-  const forcePrompt = !isLoggedIn ? "consent" : undefined;
-  
-  chrome.runtime.sendMessage({ type: "fetchSubscriptions", clientId: OAUTH_CLIENT_ID, prompt: forcePrompt }, async (response) => {
+  // Access token chỉ nằm trong chrome.storage.session. Nếu grant Google cũ còn
+  // hợp lệ, background sẽ silent re-auth; nếu không, thao tác chủ động này mới
+  // mở UI OAuth. Không ép prompt=consent để tránh hỏi lại không cần thiết.
+  chrome.runtime.sendMessage({ type: "fetchSubscriptions", clientId: OAUTH_CLIENT_ID }, async (response) => {
     if (chrome.runtime.lastError) {
       console.error("Lỗi khi tải danh sách kênh:", chrome.runtime.lastError);
       setMsg(subsMsg, "Lỗi: " + chrome.runtime.lastError.message, "error");
@@ -470,8 +468,26 @@ async function refresh() {
   }
 }
 
+async function tryRestoreGoogleSessionSilently() {
+  if (!isOAuthConfigured()) return false;
+
+  const { oauthUser } = await getSessionStorage({ oauthUser: null });
+  if (oauthUser) return true;
+
+  const res = await sendMessage({ type: "restoreOAuthSession", clientId: OAUTH_CLIENT_ID });
+  if (!res || !res.ok || !res.connected) return false;
+
+  await refresh();
+  return true;
+}
+
 (async function init() {
   await refresh();
+  if (isOAuthConfigured()) {
+    // Sau khi Edge/Chrome restart, storage.session trống. Thử lấy access token mới
+    // bằng grant Google hiện có mà không hiện cửa sổ đăng nhập.
+    await tryRestoreGoogleSessionSilently();
+  }
   if (!isOAuthConfigured()) {
     loadSubsBtn.title = "Cần cấu hình OAuth client ID trước — xem docs/OAUTH-SETUP.md";
     setMsg(subsMsg, "Tính năng này cần OAuth client ID (xem docs/OAUTH-SETUP.md).", "");

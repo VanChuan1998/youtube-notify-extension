@@ -125,12 +125,18 @@ Không commit client secret. Luồng extension không được nhúng client sec
 
 ## 6. Token và dữ liệu OAuth
 
-Bản hiện tại:
+Bản hiện tại (v1.1.2):
 
 - giữ access token trong `chrome.storage.session`, không phải local storage bền;
+- lưu `googleOAuthAuthorized` và OAuth client ID (không phải secret/token) trong `chrome.storage.local` để biết có nên thử khôi phục kết nối;
+- sau browser restart hoặc khi token hết hạn, thử `launchWebAuthFlow({ interactive: false })` với `prompt=none`; nếu grant và Google browser session vẫn hợp lệ, Google cấp access token mới mà không hiện consent/login;
+- nếu YouTube Data API trả HTTP 401, xoá session token, thử silent re-auth và retry request đúng một lần;
+- nếu silent re-auth thất bại, không tự bật cửa sổ OAuth ở background; người dùng chỉ cần bấm **Kết nối Google** khi muốn kết nối lại;
 - giữ subscriptions vừa tải và thông tin kênh tài khoản trong session;
-- khi người dùng bấm **Ngắt kết nối**, gọi `https://oauth2.googleapis.com/revoke`, xoá OAuth session data và xoá các kênh đã thêm trực tiếp từ subscriptions;
+- khi người dùng bấm **Ngắt kết nối**, gọi `https://oauth2.googleapis.com/revoke`, xoá OAuth session data, marker kết nối cục bộ và các kênh đã thêm trực tiếp từ subscriptions;
 - Privacy Policy mô tả đúng các hành vi trên.
+
+Đây vẫn là implicit access-token flow (`response_type=token`), không có refresh token và không có backend. Silent restore phụ thuộc vào việc grant OAuth chưa bị thu hồi và Google browser session vẫn cho phép xác thực không tương tác.
 
 ## 7. Request verification lại
 
