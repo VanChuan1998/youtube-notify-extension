@@ -86,6 +86,17 @@ test('báo "live" nhưng chưa có actualStartTime thì vẫn coi là upcoming',
   );
 });
 
+
+test('livestream đã từng bắt đầu nhưng broadcast đã về "none" -> ended', () => {
+  assert.equal(
+    classifyVideo({
+      snippet: { liveBroadcastContent: "none" },
+      liveStreamingDetails: { actualStartTime: "2026-09-09T10:00:00Z" },
+    }),
+    "ended"
+  );
+});
+
 test("stream đã kết thúc -> ended, kể cả khi API còn báo live", () => {
   // API vẫn trả liveBroadcastContent "live" một lúc sau khi stream tàn.
   assert.equal(

@@ -43,6 +43,11 @@ const API_BASE = "https://www.googleapis.com/youtube/v3";
 // video mới -> tránh bung hàng chục tab một lúc. Phần còn lại vẫn báo notification.
 const MAX_TABS_PER_RUN = 3;
 
+// Khi browser vừa mở, probe một vài entry RSS gần nhất kể cả đã từng "seen".
+// Mục đích duy nhất là bắt livestream đã bắt đầu trong lúc browser tắt. Các probe
+// này KHÔNG được mở nếu chỉ là video thường hoặc livestream đã kết thúc.
+const STARTUP_LIVE_PROBE_PER_CHANNEL = 5;
+
 // ---------- Storage ----------
 
 function getStorage(keys) {
@@ -82,6 +87,24 @@ async function clearOAuthSessionView() {
   // Nếu không còn access token usable thì UI cũng không được tiếp tục hiển thị
   // trạng thái “đã kết nối”. Danh sách kênh người dùng đã thêm vẫn nằm ở local.
   await removeSessionStorage(["oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
+}
+
+async function getLiveOpenedThisSession() {
+  const { liveOpenedThisSession } = await getSessionStorage({ liveOpenedThisSession: {} });
+  return liveOpenedThisSession || {};
+}
+
+async function markLiveOpenedThisSession(videoId) {
+  if (!videoId) return;
+  const opened = await getLiveOpenedThisSession();
+  if (opened[videoId]) return;
+  opened[videoId] = Date.now();
+
+  // Giữ map gọn: chỉ cần nhớ một số livestream gần nhất trong phiên trình duyệt.
+  const entries = Object.entries(opened)
+    .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+    .slice(0, 100);
+  await setSessionStorage({ liveOpenedThisSession: Object.fromEntries(entries) });
 }
 
 async function saveOAuthSession(authRes, clientId) {
@@ -175,7 +198,10 @@ async function setStatus(patch) {
 
 async function updateBadge() {
   const { status, pending } = await getStorage({ status: {}, pending: {} });
-  const waiting = Object.keys(pending || {}).length;
+  // Badge chỉ phản ánh đúng số livestream đang CHỜ lên sóng. Các video unknown
+  // đang chờ phân loại và livestream đang phát (được giữ lại để theo dõi tới lúc
+  // kết thúc) không được tính vào con số này.
+  const waiting = Object.values(pending || {}).filter((entry) => entry && entry.state === "upcoming").length;
 
   if (status && status.lastError) {
     chrome.action.setBadgeText({ text: "!" });
@@ -220,10 +246,26 @@ chrome.runtime.onInstalled.addListener(() => {
   updateBadge();
 });
 
+async function runStartupChecks() {
+  await clearLegacyOAuthStorage();
+  await ensureAlarms();
+  await updateBadge();
+
+  // Không chờ alarm đầu tiên. Khi Edge/Chrome vừa mở, quét RSS ngay rồi phân loại
+  // toàn bộ pending. Nhờ vậy nếu livestream đã bắt đầu trong lúc trình duyệt tắt,
+  // extension vẫn nhận ra trạng thái live và mở tab ngay sau khi browser khởi động.
+  await discoverNewVideos({
+    classifyImmediately: false,
+    probeRecentForLive: true,
+  });
+  await checkPendingVideos();
+}
+
 chrome.runtime.onStartup.addListener(() => {
-  clearLegacyOAuthStorage();
-  ensureAlarms();
-  updateBadge();
+  void runStartupChecks().catch(async (err) => {
+    console.error("Startup live check failed:", err);
+    await setStatus({ lastError: err?.message || String(err) });
+  });
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -499,7 +541,10 @@ async function fetchWithRetry(url, options = {}, maxRetries = 2) {
   throw lastErr;
 }
 
-async function discoverNewVideos() {
+async function discoverNewVideos({
+  classifyImmediately = true,
+  probeRecentForLive = false,
+} = {}) {
   const channels = await getChannels();
   const watched = Object.values(channels).filter((c) => c.watched);
   if (watched.length === 0) {
@@ -514,8 +559,12 @@ async function discoverNewVideos() {
     try {
       const headers = {};
       // Conditional GET: phần lớn lần gọi trả 304 rỗng, gần như không tốn băng thông.
-      if (ch.etag) headers["If-None-Match"] = ch.etag;
-      else if (ch.lastModified) headers["If-Modified-Since"] = ch.lastModified;
+      // Riêng lúc startup cần body RSS thật để probe các entry đã seen; nếu gửi ETag
+      // và nhận 304 thì ta không thể phát hiện một stream đã bắt đầu khi browser tắt.
+      if (!probeRecentForLive) {
+        if (ch.etag) headers["If-None-Match"] = ch.etag;
+        else if (ch.lastModified) headers["If-Modified-Since"] = ch.lastModified;
+      }
 
       const res = await fetchWithRetry(feedUrlForChannel(ch.id), { headers });
 
@@ -550,10 +599,31 @@ async function discoverNewVideos() {
 
       const fresh = findNewVideos(videos, ch.seenVideoIds);
 
+      if (probeRecentForLive && ch.initialized) {
+        const seen = new Set(ch.seenVideoIds || []);
+        for (const v of videos.slice(0, STARTUP_LIVE_PROBE_PER_CHANNEL)) {
+          // Fresh video sẽ được nhánh bình thường bên dưới thêm vào pending. Chỉ probe
+          // item đã seen nhưng hiện không còn pending, để xem nó có đang live không.
+          if (!seen.has(v.videoId) || pending[v.videoId]) continue;
+          pending[v.videoId] = {
+            videoId: v.videoId,
+            channelId: ch.id,
+            title: v.title,
+            thumbnail: v.thumbnail,
+            state: "unknown",
+            scheduledStartTime: "",
+            firstSeenAt: Date.now(),
+            lastCheckedAt: 0,
+            startupLiveProbe: true,
+          };
+        }
+      }
+
       if (!ch.initialized) {
         // Lần đầu theo dõi: chỉ chốt mốc, không mở tab cho video cũ.
         ch.seenVideoIds = rememberSeen([], videos.map((v) => v.videoId));
         ch.initialized = true;
+        ch.lastCheckedVideoId = videos[0].videoId;
         ch.lastCheckedTitle = videos[0].title;
       } else if (fresh.length) {
         for (const v of fresh) {
@@ -569,8 +639,14 @@ async function discoverNewVideos() {
           };
         }
         ch.seenVideoIds = rememberSeen(ch.seenVideoIds, fresh.map((v) => v.videoId));
+        ch.lastCheckedVideoId = fresh[0].videoId;
         ch.lastCheckedTitle = fresh[0].title;
         foundCount += fresh.length;
+      } else if (!ch.lastCheckedVideoId && videos[0]) {
+        // Migration cho dữ liệu từ các bản cũ: nhớ ID của mục mới nhất để sau khi
+        // livestream kết thúc có thể cập nhật đúng title cuối cùng mà không ghi đè
+        // title của một video mới hơn.
+        ch.lastCheckedVideoId = videos[0].videoId;
       }
 
       ch.lastError = "";
@@ -583,8 +659,9 @@ async function discoverNewVideos() {
   await setStorage({ channels, pending });
   await setStatus({ lastError: "", lastDiscoverAt: Date.now() });
 
-  // Có video mới thì phân loại ngay, không đợi hết chu kỳ vòng 2.
-  if (foundCount > 0) await checkPendingVideos();
+  // Có video mới thì bình thường phân loại ngay, không đợi hết chu kỳ vòng 2.
+  // Startup/checkNow có thể tắt bước này để gom thành đúng một lần videos.list.
+  if (foundCount > 0 && classifyImmediately) await checkPendingVideos();
 }
 
 // ---------- Vòng 2: phân loại và theo dõi trạng thái live ----------
@@ -596,7 +673,10 @@ async function checkPendingVideos() {
   // Dọn các mục quá hạn trước, để không kéo theo chúng vào lệnh gọi API.
   let changed = false;
   for (const [id, entry] of Object.entries(pending)) {
-    if (isExpired(entry, now)) {
+    // Livestream đang phát được giữ lại cho tới khi API xác nhận đã kết thúc,
+    // nhờ đó ta cập nhật được title cuối cùng sau live. Upcoming/unknown quá hạn
+    // vẫn được dọn như trước để hàng chờ không phình vô hạn.
+    if (entry.state !== "live" && isExpired(entry, now)) {
       delete pending[id];
       changed = true;
     }
@@ -677,21 +757,115 @@ async function checkPendingVideos() {
   await setStatus({ lastError: "", lastLiveCheckAt: now });
 }
 
+async function updateLatestTitlesFromApi(updates) {
+  if (!updates.length) return;
+
+  // Tải snapshot mới nhất ngay trước khi ghi để không làm mất thay đổi mode/watched
+  // mà người dùng vừa thao tác trong popup. Chỉ cập nhật metadata của đúng video
+  // đang là mục mới nhất của kênh.
+  const latestChannels = await getChannels();
+  let changed = false;
+
+  for (const { channelId, videoId, title } of updates) {
+    const ch = latestChannels[channelId];
+    if (!ch || !title) continue;
+
+    const newestKnownId = ch.lastCheckedVideoId || (Array.isArray(ch.seenVideoIds) ? ch.seenVideoIds[0] : "");
+    if (newestKnownId && newestKnownId !== videoId) continue;
+
+    if (ch.lastCheckedVideoId !== videoId) {
+      ch.lastCheckedVideoId = videoId;
+      changed = true;
+    }
+    if (ch.lastCheckedTitle !== title) {
+      ch.lastCheckedTitle = title;
+      changed = true;
+    }
+  }
+
+  if (changed) await setStorage({ channels: latestChannels });
+}
+
 // Mở tab / báo notification theo trạng thái và mode của kênh.
 async function handleClassified(classified, pending, channelsArg) {
   // Không dùng channelsArg để ghi lại storage — nó là snapshot cũ.
-  // Chỉ dùng để đọc mode/title của kênh; tải lại mới nhất trước khi lưu.
+  // Chỉ dùng để đọc mode/title của kênh; metadata mới nhất sẽ được merge riêng.
   const channels = channelsArg || (await getChannels());
+  const liveOpenedThisSession = await getLiveOpenedThisSession();
   let tabsOpened = 0;
+  const latestTitleUpdates = [];
 
   for (const { entry, state } of classified) {
     const ch = channels[entry.channelId] || {};
     const mode = ch.mode === "liveOnly" ? "liveOnly" : "all";
+    const previousState = entry.state || "unknown";
 
     if (state === "upcoming") {
       // Chưa lên sóng: giữ lại trong hàng chờ, kiểm tra tiếp ở vòng sau.
       entry.state = "upcoming";
       pending[entry.videoId] = entry;
+      continue;
+    }
+
+    if (state === "live") {
+      // Giữ entry trong pending để tiếp tục poll tới actualEndTime, nhưng chỉ mở
+      // tab tối đa MỘT lần trong mỗi phiên trình duyệt. `chrome.storage.session`
+      // tự xoá khi browser restart, nên nếu Edge được mở lại trong lúc stream vẫn
+      // đang live thì stream sẽ tự mở lại một lần — đúng hành vi mong muốn.
+      entry.state = "live";
+      delete entry.startupLiveProbe;
+      const alreadyOpenedThisSession = !!liveOpenedThisSession[entry.videoId];
+
+      if (!alreadyOpenedThisSession) {
+        if (shouldOpenTab(state, mode) && tabsOpened < MAX_TABS_PER_RUN) {
+          try {
+            await chrome.tabs.create({
+              url: `https://www.youtube.com/watch?v=${entry.videoId}`,
+              active: false,
+            });
+            tabsOpened++;
+          } catch (tabErr) {
+            console.error("Mở tab thất bại:", tabErr);
+          }
+        }
+
+        notify(entry, state, ch);
+        liveOpenedThisSession[entry.videoId] = Date.now();
+        await markLiveOpenedThisSession(entry.videoId);
+      }
+
+      // Marker bền chỉ dùng để nhận biết đây từng là livestream đã chạy khi nó end;
+      // không còn dùng để chặn mở tab sau browser restart.
+      if (!entry.liveHandledAt) entry.liveHandledAt = Date.now();
+      pending[entry.videoId] = entry;
+      continue;
+    }
+
+    // Probe lúc browser startup chỉ nhằm tìm livestream ĐANG PHÁT. Nếu item đã seen
+    // thực ra là video thường hoặc livestream đã end thì bỏ im lặng, không mở lại
+    // tab/notification của nội dung cũ.
+    if (entry.startupLiveProbe && (state === "none" || state === "ended")) {
+      delete pending[entry.videoId];
+      continue;
+    }
+
+    // videos.list luôn trả snippet.title mới nhất. Với livestream đã kết thúc, đây
+    // là title cuối cùng cần hiển thị ở dòng "Mới nhất:" của kênh. Chỉ ghi nếu
+    // video này vẫn là video mới nhất đã biết, tránh stream cũ ghi đè video mới.
+    if (state === "ended" || state === "none") {
+      latestTitleUpdates.push({
+        channelId: entry.channelId,
+        videoId: entry.videoId,
+        title: entry.title || "",
+      });
+    }
+
+    const wasAlreadyLive = previousState === "live" || !!entry.liveHandledAt;
+
+    if (state === "ended" && wasAlreadyLive) {
+      // Livestream đã được xử lý lúc bắt đầu phát: khi kết thúc chỉ cập nhật title
+      // cuối cùng và dọn khỏi pending, tuyệt đối không mở tab/thông báo lần hai.
+      delete pending[entry.videoId];
       continue;
     }
 
@@ -714,11 +888,12 @@ async function handleClassified(classified, pending, channelsArg) {
       notify(entry, state, ch);
     }
 
+    // Tất cả trạng thái terminal (none/ended) phải rời hàng chờ.
     delete pending[entry.videoId];
   }
 
-  // Chỉ lưu pending (truyền vào từ caller) — không ghi lại channels để tránh ghi è dữ liệu mới hơn.
   await setStorage({ pending });
+  await updateLatestTitlesFromApi(latestTitleUpdates);
   await updateBadge();
 }
 
@@ -757,6 +932,7 @@ async function initChannelBaseline(channelId) {
   ch.seenVideoIds = rememberSeen([], videos.map((v) => v.videoId));
   ch.initialized = true;
   ch.consecutiveErrors = 0;
+  ch.lastCheckedVideoId = videos.length ? videos[0].videoId : "";
   ch.lastCheckedTitle = videos.length ? videos[0].title : "";
   ch.lastError = "";
   await setStorage({ channels });
@@ -780,7 +956,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true });
           return;
         case "checkNow":
-          await discoverNewVideos();
+          await discoverNewVideos({ classifyImmediately: false });
           await checkPendingVideos();
           sendResponse({ ok: true });
           return;

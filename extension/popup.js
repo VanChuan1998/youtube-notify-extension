@@ -281,7 +281,10 @@ async function renderChannelList() {
 
 async function renderPending() {
   const { pending, channels } = await getStorage({ pending: {}, channels: {} });
-  const list = Object.values(pending || {}).sort(
+  // Phần này đúng nghĩa chỉ dành cho livestream đã xác nhận là UPCOMING.
+  // Video unknown đang chờ phân loại và livestream đang phát/kết thúc không được
+  // hiển thị trong card "Đang chờ lên sóng".
+  const list = Object.values(pending || {}).filter((entry) => entry && entry.state === "upcoming").sort(
     (a, b) => {
       const ta = a.scheduledStartTime ? Date.parse(a.scheduledStartTime) : Infinity;
       const tb = b.scheduledStartTime ? Date.parse(b.scheduledStartTime) : Infinity;

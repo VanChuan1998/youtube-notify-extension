@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Auto Mở Live",
-  "version": "1.1.3",
+  "version": "1.1.5",
   "description": "Theo dõi các kênh YouTube bạn chọn, thông báo và tự mở tab khi có video mới hoặc livestream bắt đầu.",
   "icons": {
     "16": "icons/icon16.png",

@@ -10,6 +10,7 @@ Extension có hai vòng kiểm tra:
 
 1. **Phát hiện nội dung mới** — đọc feed video của từng channel ID theo chu kỳ (mặc định 60 giây). ID video mới được đưa vào hàng chờ.
 2. **Phân loại trạng thái** — dùng YouTube Data API v3 qua **API key của người dùng** hoặc **OAuth Google tuỳ chọn** để gọi `videos.list`, xác định video thường / livestream đang phát / livestream sắp phát. Mặc định kiểm tra hàng chờ mỗi 30 giây.
+3. **Kiểm tra ngay khi trình duyệt khởi động** — extension tải lại RSS và probe tối đa 5 entry gần nhất của mỗi kênh bằng `videos.list`. Nếu một livestream đã bắt đầu trong lúc Edge/Chrome tắt, tab của livestream đó sẽ tự mở một lần trong phiên trình duyệt mới. Các video thường hoặc livestream đã kết thúc chỉ được probe để xác định trạng thái và không bị mở lại.
 
 Không còn cơ chế tải HTML của trang kênh hoặc trang `watch` để suy đoán dữ liệu. Các thao tác tra cứu handle/tên kênh và phân loại video dùng endpoint chính thức của YouTube Data API.
 

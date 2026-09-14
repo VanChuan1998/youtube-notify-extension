@@ -56,6 +56,12 @@ export function classifyVideo(item) {
   if (broadcast === "live" && live.actualStartTime) return "live";
   if (broadcast === "upcoming") return "upcoming";
   if (broadcast === "live") return "upcoming"; // báo live nhưng chưa thực sự bắt đầu
+
+  // Một số livestream vừa kết thúc có thể chuyển liveBroadcastContent về "none"
+  // trước khi actualEndTime xuất hiện ổn định. Nếu đã từng có actualStartTime thì
+  // chắc chắn đây không còn là video "upcoming" nữa -> coi là ended để dọn hàng chờ.
+  if (live.actualStartTime) return "ended";
+
   return "none";
 }
 
