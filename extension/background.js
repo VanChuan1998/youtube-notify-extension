@@ -375,6 +375,47 @@ function getAuthToken(interactive, clientId, prompt) {
   });
 }
 
+async function revokeOAuthGrant(token) {
+  if (!token) return { ok: false, warning: "Không có access token còn hiệu lực để gửi yêu cầu thu hồi tới Google." };
+  try {
+    const body = new URLSearchParams({ token }).toString();
+    const res = await fetch("https://oauth2.googleapis.com/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+    if (res.ok) return { ok: true, warning: "" };
+    return {
+      ok: false,
+      warning: `Google trả HTTP ${res.status} khi thu hồi quyền. Dữ liệu OAuth cục bộ vẫn sẽ được xoá.`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      warning: "Không thể xác nhận thu hồi quyền với Google: " + (err.message || String(err)),
+    };
+  }
+}
+
+async function clearLocalOAuthState({ keepTrackedChannels = true } = {}) {
+  await removeSessionStorage([
+    "oauthToken",
+    "oauthTokenExpires",
+    "oauthUser",
+    "fetchedSubs",
+    "oauthDataFetchedAt",
+  ]);
+  await removeStorage(["googleOAuthAuthorized", "googleOAuthClientId"]);
+
+  if (!keepTrackedChannels) {
+    const channels = await getChannels();
+    for (const [id, ch] of Object.entries(channels)) {
+      if (ch && ch.source === "subscription") delete channels[id];
+    }
+    await setStorage({ channels });
+  }
+}
+
 async function fetchUserInfo(token) {
   const data = await apiFetch("/channels", { part: "snippet", mine: "true" }, { oauthToken: token });
   return data.items || [];
@@ -970,13 +1011,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         case "fetchSubscriptions": {
           try {
-            let token = await getCachedOAuthToken({ clientId: message.clientId });
+            const { forceConsentNextOAuth } = await getStorage({ forceConsentNextOAuth: false });
+            let token = "";
 
-            // Khi người dùng chủ động bấm nút và silent restore không khả dụng,
-            // mới mở OAuth UI. Không ép prompt=consent; Google tự hiển thị consent khi cần.
-            if (message.forceInteractive || !token) {
-              const authRes = await getAuthToken(true, message.clientId);
+            // Sau khi người dùng chọn “Đặt lại quyền Google”, bỏ qua silent restore
+            // và buộc hiện lại cả account chooser + consent screen đúng một lần.
+            if (forceConsentNextOAuth || message.forceConsent) {
+              const authRes = await getAuthToken(
+                true,
+                message.clientId,
+                "consent select_account"
+              );
               token = await saveOAuthSession(authRes, message.clientId);
+              await removeStorage(["forceConsentNextOAuth"]);
+            } else {
+              token = await getCachedOAuthToken({ clientId: message.clientId });
+
+              // Khi người dùng chủ động bấm nút và silent restore không khả dụng,
+              // mới mở OAuth UI. Không ép consent trong luồng sử dụng bình thường.
+              if (message.forceInteractive || !token) {
+                const authRes = await getAuthToken(true, message.clientId);
+                token = await saveOAuthSession(authRes, message.clientId);
+              }
             }
 
             const { subs, oauthUser } = await loadOAuthAccountData(token);
@@ -1012,6 +1068,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           return;
         }
+        case "resetOAuthForConsent": {
+          const cached = await getSessionStorage({ oauthToken: "", oauthTokenExpires: 0 });
+          let token = cached.oauthToken;
+
+          // Nếu token session đã hết nhưng grant còn tồn tại, thử lấy token mới âm thầm
+          // chỉ để revoke. Không hiển thị UI ở bước reset.
+          if ((!token || Date.now() >= cached.oauthTokenExpires) && message.clientId) {
+            token = await getCachedOAuthToken({ clientId: message.clientId, forceRefresh: true });
+          }
+
+          const revokeResult = await revokeOAuthGrant(token);
+          await clearLocalOAuthState({ keepTrackedChannels: true });
+
+          // Đây là marker một lần, không chứa credential. Lần Connect tiếp theo sẽ
+          // dùng prompt=consent select_account rồi tự xoá marker sau khi thành công.
+          await setStorage({ forceConsentNextOAuth: true });
+          await setStatus({ lastError: "" });
+
+          sendResponse({ ok: true, warning: revokeResult.warning || "" });
+          return;
+        }
         case "revokeOAuth": {
           const cached = await getSessionStorage({ oauthToken: "", oauthTokenExpires: 0 });
           let token = cached.oauthToken;
@@ -1023,32 +1100,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             token = await getCachedOAuthToken({ clientId: message.clientId, forceRefresh: true });
           }
 
-          if (token) {
-            try {
-              const body = new URLSearchParams({ token }).toString();
-              const res = await fetch("https://oauth2.googleapis.com/revoke", {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body,
-              });
-              if (!res.ok) {
-                revokeWarning = `Google trả HTTP ${res.status} khi thu hồi token; dữ liệu OAuth cục bộ vẫn đã được xoá. Bạn có thể kiểm tra quyền trong Google Account > Third-party connections.`;
-              }
-            } catch (err) {
-              revokeWarning = "Không thể xác nhận thu hồi quyền với Google: " + (err.message || String(err));
-            }
-          } else {
+          const revokeResult = await revokeOAuthGrant(token);
+          revokeWarning = revokeResult.warning || "";
+          if (!token && !revokeWarning) {
             revokeWarning = "Không có access token còn hiệu lực để thu hồi tự động. Hãy kiểm tra Google Account > Third-party connections nếu muốn xác nhận quyền đã bị gỡ.";
           }
 
-          await removeSessionStorage(["oauthToken", "oauthTokenExpires"]);
-          const channels = await getChannels();
-          for (const [id, ch] of Object.entries(channels)) {
-            if (ch && ch.source === "subscription") delete channels[id];
-          }
-          await setStorage({ channels });
-          await removeSessionStorage(["oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
-          await removeStorage(["googleOAuthAuthorized", "googleOAuthClientId"]);
+          await clearLocalOAuthState({ keepTrackedChannels: false });
+          await removeStorage(["forceConsentNextOAuth"]);
           sendResponse({ ok: true, warning: revokeWarning });
           return;
         }

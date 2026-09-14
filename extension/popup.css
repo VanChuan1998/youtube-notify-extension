@@ -254,3 +254,18 @@ footer {
   font-size: 10px;
   color: var(--muted);
 }
+
+
+.oauth-tools {
+  margin-top: 10px;
+}
+
+.oauth-tools summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.oauth-tools .full-width {
+  margin-top: 6px;
+}

@@ -60,3 +60,19 @@ Please re-review the application. The prior finding that the homepage is behind 
 
 Thank you.
 ```
+
+
+## Re-recording the OAuth demo after a previous grant
+
+If Google no longer shows the consent screen because the test account already granted access:
+
+1. Open the extension popup.
+2. Expand **Quản lý quyền Google**.
+3. Click **Đặt lại quyền Google** and confirm. This clears local OAuth state and attempts to revoke the current Google OAuth grant.
+4. Start screen recording **before** reconnecting.
+5. Click **Kết nối Google & tải kênh đã đăng ký**. The next authorization is intentionally requested with `prompt=consent select_account`, so Google should show the account chooser and consent screen again.
+6. On the Google consent screen, switch the UI language to **English** if necessary. Record the complete consent screen and the requested `youtube.readonly` permission.
+7. Approve access, return to Auto Mở Live, show the loaded subscriptions, add a channel, and demonstrate the user-facing monitoring functionality that uses the scope.
+8. Keep the OAuth client ID/address bar visible where practical, and do not edit the video in a way that hides the consent flow.
+
+If Google revocation has not propagated yet, wait briefly and retry. As a fallback, remove Auto Mở Live from Google Account > Third-party connections, then use the reset action again before recording.

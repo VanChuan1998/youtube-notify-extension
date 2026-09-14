@@ -207,7 +207,7 @@
   </div>
 
   <h1>Chính sách bảo mật</h1>
-  <p class="updated">Cập nhật lần cuối: 11/09/2026</p>
+  <p class="updated">Cập nhật lần cuối: 14/09/2026</p>
 
   <div class="lang-tab">
     <button class="active" data-lang="vi">Tiếng Việt</button>
@@ -291,6 +291,17 @@
       Nhà phát triển <strong>không nhận, không bán và không chia sẻ</strong> Google user data qua một backend riêng. Dữ liệu OAuth chỉ được truyền trực tiếp giữa Extension và Google/YouTube khi cần cho chức năng đã mô tả. Access token không được ghi vào <code>chrome.storage.local</code>. Sau khi trình duyệt khởi động lại, Extension có thể yêu cầu Google cấp access token mới ở chế độ không tương tác nếu quyền OAuth vẫn còn hiệu lực và Google có thể xác thực người dùng mà không cần tương tác. Extension không đọc mật khẩu Google, cookie đăng nhập, lịch sử duyệt web hay nội dung của các tab khác.
     </div>
 
+    <h2>Cơ chế bảo vệ dữ liệu nhạy cảm</h2>
+    <ul>
+      <li><strong>Mã hoá khi truyền:</strong> mọi OAuth request, YouTube Data API request và yêu cầu thu hồi token đều sử dụng <strong>HTTPS/TLS</strong>. Access token chỉ được gửi trực tiếp tới endpoint của Google trong header Authorization hoặc tới endpoint thu hồi của Google.</li>
+      <li><strong>Không lưu token bền vững:</strong> OAuth access token chỉ nằm trong <code>chrome.storage.session</code>; Extension không ghi token vào <code>chrome.storage.local</code>, <code>chrome.storage.sync</code>, log, analytics hoặc máy chủ của nhà phát triển. Token bị xoá khi phiên trình duyệt kết thúc, khi người dùng Ngắt kết nối hoặc khi đặt lại quyền Google.</li>
+      <li><strong>Giảm quyền tối đa:</strong> Extension chỉ yêu cầu scope chỉ đọc <code>youtube.readonly</code>; không yêu cầu quyền upload, sửa, xoá, bình luận hoặc quản lý tài khoản YouTube.</li>
+      <li><strong>Cô lập trong Extension:</strong> OAuth token không được chèn vào trang YouTube, không được cung cấp cho content script hay JavaScript của website. Content Security Policy của Extension chỉ cho chạy script đóng gói cùng Extension và giới hạn kết nối mạng tới các endpoint Google/YouTube cần thiết.</li>
+      <li><strong>Không có backend thu thập dữ liệu:</strong> nhà phát triển không vận hành máy chủ nhận OAuth token hoặc Google user data, vì vậy dữ liệu nhạy cảm này không được sao chép vào cơ sở dữ liệu/server log của nhà phát triển.</li>
+      <li><strong>Thu hồi và xoá chủ động:</strong> nút <strong>Ngắt kết nối</strong> hoặc <strong>Đặt lại quyền Google</strong> xoá OAuth data cục bộ và cố gắng thu hồi quyền tại Google. Người dùng cũng có thể thu hồi quyền trực tiếp trong Google Account.</li>
+    </ul>
+    <p>Các dữ liệu cấu hình không chứa OAuth access token (ví dụ danh sách kênh đang theo dõi, video ID đã thấy và marker kết nối không nhạy cảm) có thể được lưu trong <code>chrome.storage.local</code> của profile trình duyệt để Extension hoạt động qua các lần khởi động lại.</p>
+
     <h2>Quyền (permissions) và lý do cần dùng</h2>
     <ul>
       <li><code>storage</code> — lưu cấu hình cục bộ và giữ OAuth data tạm thời trong session storage.</li>
@@ -348,6 +359,17 @@
     <div class="callout">
       The developer <strong>does not receive, sell, or share</strong> Google user data through a developer-operated backend. OAuth data is transmitted only between the Extension and Google/YouTube as required for the disclosed functionality. Access tokens are never written to <code>chrome.storage.local</code>. After a browser restart, the Extension may ask Google for a new access token non-interactively when the existing OAuth grant remains valid and Google can authenticate the user without interaction. The Extension does not read your Google password, sign-in cookies, browsing history, or the contents of other tabs.
     </div>
+
+    <h2>Data protection and security mechanisms</h2>
+    <ul>
+      <li><strong>Encryption in transit:</strong> all OAuth requests, YouTube Data API requests, and token-revocation requests use <strong>HTTPS/TLS</strong>. OAuth access tokens are sent only to Google endpoints in the Authorization header or to Google's revocation endpoint.</li>
+      <li><strong>No persistent access-token storage:</strong> OAuth access tokens are kept only in <code>chrome.storage.session</code>. The Extension does not write access tokens to <code>chrome.storage.local</code>, <code>chrome.storage.sync</code>, logs, analytics, or a developer-operated server. Session tokens are cleared when the browser session ends, when the user disconnects, or when Google authorization is reset.</li>
+      <li><strong>Least-privilege access:</strong> the Extension requests only the read-only <code>youtube.readonly</code> scope and does not request upload, edit, delete, comment, or account-management permissions.</li>
+      <li><strong>Extension isolation:</strong> OAuth tokens are not injected into YouTube pages and are not exposed to website JavaScript or content scripts. The Extension Content Security Policy allows packaged scripts only and restricts network connections to the Google/YouTube endpoints required for the disclosed functionality.</li>
+      <li><strong>No developer data backend:</strong> the developer does not operate a server that receives OAuth tokens or Google user data, so this sensitive data is not copied into a developer database or server logs.</li>
+      <li><strong>User-controlled revocation and deletion:</strong> <strong>Disconnect</strong> and <strong>Reset Google authorization</strong> clear local OAuth data and attempt to revoke access at Google. Users can also revoke access directly from their Google Account.</li>
+    </ul>
+    <p>Non-token configuration data (for example tracked channels, seen video IDs, and a non-sensitive connection marker) may remain in <code>chrome.storage.local</code> in the browser profile so the Extension can operate across browser restarts.</p>
 
     <h2>Permissions and why they are needed</h2>
     <ul>

@@ -26,6 +26,7 @@ const userName = $("userName");
 const logoutBtn = $("logoutBtn");
 
 const loadSubsBtn = $("loadSubsBtn");
+const resetOAuthBtn = $("resetOAuthBtn");
 const subsMsg = $("subsMsg");
 const subsList = $("subsList");
 
@@ -428,6 +429,42 @@ loadSubsBtn.addEventListener("click", async () => {
       loadSubsBtn.disabled = false;
     }
   });
+});
+
+resetOAuthBtn.addEventListener("click", async () => {
+  if (!isOAuthConfigured()) {
+    setMsg(subsMsg, "OAuth client ID chưa được cấu hình.", "error");
+    return;
+  }
+
+  if (!confirm(
+    "Đặt lại quyền Google sẽ thu hồi quyền OAuth hiện tại khi có thể và xoá dữ liệu OAuth cục bộ. " +
+    "Lần kết nối tiếp theo sẽ hiển thị lại màn hình chọn tài khoản và xác nhận quyền. " +
+    "Các kênh đang theo dõi sẽ được giữ nguyên. Tiếp tục?"
+  )) return;
+
+  resetOAuthBtn.disabled = true;
+  loadSubsBtn.disabled = true;
+  setMsg(subsMsg, "Đang đặt lại quyền Google...", "");
+
+  const res = await sendMessage({ type: "resetOAuthForConsent", clientId: OAUTH_CLIENT_ID });
+
+  resetOAuthBtn.disabled = false;
+  loadSubsBtn.disabled = false;
+  userInfoContainer.style.display = "none";
+  loadSubsBtn.textContent = "Kết nối Google & tải kênh đã đăng ký";
+  subsList.innerHTML = "";
+
+  if (res && res.ok) {
+    const suffix = res.warning ? ` ${res.warning}` : "";
+    setMsg(
+      subsMsg,
+      "Đã đặt lại quyền. Bắt đầu quay video rồi bấm “Kết nối Google & tải kênh đã đăng ký”; Google sẽ hiển thị lại account chooser và consent screen." + suffix,
+      res.warning ? "" : "ok"
+    );
+  } else {
+    setMsg(subsMsg, "Không thể đặt lại quyền: " + (res && res.error ? res.error : "Không rõ lỗi"), "error");
+  }
 });
 
 logoutBtn.addEventListener("click", async () => {

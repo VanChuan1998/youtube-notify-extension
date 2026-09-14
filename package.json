@@ -1,7 +1,7 @@
 {
   "name": "auto-mo-live",
   "private": true,
-  "version": "1.1.5",
+  "version": "1.1.6",
   "description": "Chrome extension Auto Mở Live + website công khai cho privacy/OAuth verification",
   "type": "module",
   "scripts": {

@@ -91,6 +91,17 @@
     </div>
 
     <button id="loadSubsBtn" class="secondary full-width">Kết nối Google &amp; tải kênh đã đăng ký</button>
+
+    <details class="oauth-tools">
+      <summary>Quản lý quyền Google</summary>
+      <p class="muted small">
+        <strong>Đặt lại quyền Google</strong> sẽ thu hồi quyền OAuth hiện tại khi có thể và xoá dữ liệu OAuth cục bộ.
+        Lần kết nối tiếp theo sẽ buộc Google hiển thị lại màn hình chọn tài khoản và xác nhận quyền.
+        Danh sách kênh bạn đang theo dõi sẽ không bị xoá.
+      </p>
+      <button id="resetOAuthBtn" class="secondary full-width">Đặt lại quyền Google</button>
+    </details>
+
     <p id="subsMsg" class="status"></p>
     <div id="subsList" class="channel-list"></div>
   </section>

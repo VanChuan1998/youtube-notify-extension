@@ -112,3 +112,8 @@ CI còn kiểm tra branding quan trọng, homepage/Privacy URL và ngăn việc 
 **OAuth báo `redirect_uri_mismatch` / `invalid_client`** — kiểm tra client ID trong `extension/popup.js` và Redirect URI hiển thị ở popup theo `docs/OAUTH-SETUP.md`.
 
 **OAuth Verification báo homepage nằm sau login** — kiểm tra Cloud Console dùng chính xác `https://youtube-notification.chuan-nv.com/`, mở URL đó ở Incognito và xác nhận nội dung app + Privacy Policy hiện công khai mà không cần sign-in.
+
+
+### OAuth demo reset (v1.1.6)
+
+The popup now includes **Quản lý quyền Google → Đặt lại quyền Google**. This revokes the current OAuth grant when possible, clears local OAuth session state, and forces the next explicit Connect action to request `consent select_account` once. This is useful when re-consent is needed (for example, while recording the Google OAuth verification demo) without storing access tokens persistently.
