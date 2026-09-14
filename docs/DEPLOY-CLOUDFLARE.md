@@ -37,6 +37,8 @@ CLOUDFLARE_API_TOKEN
 CLOUDFLARE_ACCOUNT_ID
 ```
 
+Workflow dùng Node.js 24 và chạy trực tiếp `npx --yes wrangler@4 deploy`. Không bật `ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION`; Node 20 đã bị GitHub deprecate và đang trong lộ trình bị loại bỏ hoàn toàn.
+
 API token chỉ cần quyền tối thiểu đủ để deploy Worker/static assets và quản lý route/domain của project này. Không commit token vào repo.
 
 ## Custom domain

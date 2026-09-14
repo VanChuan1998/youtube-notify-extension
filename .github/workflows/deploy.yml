@@ -22,7 +22,13 @@ jobs:
     name: wrangler deploy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+
+      - name: Dùng Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
 
       - name: Kiểm tra secret đã được cấu hình
         env:
@@ -38,12 +44,14 @@ jobs:
             grep -qi '<meta charset="utf-8">' "$f" || { echo "::error file=$f::thiếu <meta charset=\"UTF-8\">"; exit 1; }
           done
 
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          # Bắt buộc ghim phiên bản. Không ghim thì action dùng bản wrangler có
-          # sẵn trên runner (hiện là 3.90.0), bản đó chưa hỗ trợ Worker chỉ có
-          # assets và fail với "Missing entry-point: ... or the `main` config field".
-          wranglerVersion: '4'
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+      # Chạy Wrangler trực tiếp bằng Node 24 thay vì wrangler-action@v3.
+      # GitHub đang loại bỏ Node 20; cách này tránh phụ thuộc runtime cũ của
+      # JavaScript Action và dùng đúng biến môi trường CI mà Wrangler hỗ trợ.
+      - name: Deploy web với Wrangler 4
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node --version
+          npx --yes wrangler@4 --version
+          npx --yes wrangler@4 deploy

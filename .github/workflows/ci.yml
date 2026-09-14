@@ -14,7 +14,13 @@ jobs:
     name: Kiểm tra extension và web
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+
+      - name: Dùng Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
 
       - name: Kiểm tra manifest.json hợp lệ
         run: python3 -m json.tool extension/manifest.json > /dev/null
@@ -96,7 +102,7 @@ jobs:
       - name: Đóng gói extension
         run: ./scripts/pack-extension.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: extension-zip
           path: dist/*.zip
@@ -123,6 +129,10 @@ jobs:
               errors.append('homepage thiếu Privacy URL production')
           if 'chrome.storage.session' not in privacy:
               errors.append('Privacy Policy thiếu mô tả OAuth session storage')
+          if 'Cơ chế bảo vệ dữ liệu nhạy cảm' not in privacy or 'Data protection and security mechanisms' not in privacy:
+              errors.append('Privacy Policy thiếu mục cơ chế bảo vệ dữ liệu nhạy cảm')
+          if 'HTTPS/TLS' not in privacy:
+              errors.append('Privacy Policy thiếu mô tả mã hoá HTTPS/TLS khi truyền')
           if errors:
               for e in errors: print('::error::' + e)
               sys.exit(1)
