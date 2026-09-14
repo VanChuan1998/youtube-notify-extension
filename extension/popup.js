@@ -151,43 +151,26 @@ channelInput.addEventListener("keydown", (e) => {
 
 async function addChannel() {
   const input = channelInput.value.trim();
-  if (!input) return;
+  if (!input || addChannelBtn.disabled) return;
 
   addChannelBtn.disabled = true;
   setMsg(addMsg, "Đang tìm kênh...", "");
   const res = await sendMessage({ type: "resolveChannel", input });
-  addChannelBtn.disabled = false;
 
   if (!res || !res.ok) {
+    addChannelBtn.disabled = false;
     setMsg(addMsg, "Không tìm thấy: " + (res && res.error), "error");
     return;
   }
 
   const ch = res.channel;
-  const { channels } = await getStorage({ channels: {} });
-  channels[ch.id] = {
-    id: ch.id,
-    title: ch.title,
-    thumbnail: ch.thumbnail,
-    watched: true,
-    mode: "all",
-    initialized: false,
-    seenVideoIds: [],
-    etag: "",
-    lastModified: "",
-    addedAt: Date.now(),
-    source: "manual",
-  };
-  await setStorage({ channels });
-
   channelInput.value = "";
-  setMsg(addMsg, `Đã thêm: ${ch.title}. Đang chốt mốc...`, "ok");
-  await renderChannelList();
-
-  const init = await sendMessage({ type: "initChannel", channelId: ch.id });
+  setMsg(addMsg, `Đang thêm ${ch.title} và kiểm tra livestream...`, "");
+  const init = await sendMessage({ type: "addChannel", channel: ch, source: "manual" });
+  addChannelBtn.disabled = false;
   setMsg(
     addMsg,
-    init && init.ok ? `Đã thêm: ${ch.title}` : `Đã thêm: ${ch.title} (chưa chốt được mốc: ${init && init.error})`,
+    init && init.ok ? `Đã thêm: ${ch.title}` : `Chưa hoàn tất kiểm tra ${ch.title}: ${init && init.error}`,
     init && init.ok ? "ok" : "error"
   );
   await renderChannelList();
@@ -239,11 +222,8 @@ async function renderChannelList() {
     }
     mode.value = ch.mode === "liveOnly" ? "liveOnly" : "all";
     mode.addEventListener("change", async () => {
-      const { channels: latest } = await getStorage({ channels: {} });
-      if (latest[ch.id]) {
-        latest[ch.id].mode = mode.value;
-        await setStorage({ channels: latest });
-      }
+      const result = await sendMessage({ type: "updateChannel", channelId: ch.id, patch: { mode: mode.value } });
+      if (!result?.ok) setMsg(statusMsg, "Lỗi: " + result?.error, "error");
     });
     info.appendChild(mode);
 
@@ -254,11 +234,8 @@ async function renderChannelList() {
     toggle.checked = !!ch.watched;
     toggle.title = "Bật/tắt theo dõi";
     toggle.addEventListener("change", async () => {
-      const { channels: latest } = await getStorage({ channels: {} });
-      if (latest[ch.id]) {
-        latest[ch.id].watched = toggle.checked;
-        await setStorage({ channels: latest });
-      }
+      const result = await sendMessage({ type: "updateChannel", channelId: ch.id, patch: { watched: toggle.checked } });
+      if (!result?.ok) setMsg(statusMsg, "Lỗi: " + result?.error, "error");
     });
     item.appendChild(toggle);
 
@@ -267,9 +244,8 @@ async function renderChannelList() {
     removeBtn.textContent = "✕";
     removeBtn.title = "Xoá kênh";
     removeBtn.addEventListener("click", async () => {
-      const { channels: latest } = await getStorage({ channels: {} });
-      delete latest[ch.id];
-      await setStorage({ channels: latest });
+      const result = await sendMessage({ type: "removeChannel", channelId: ch.id });
+      if (!result?.ok) setMsg(statusMsg, "Lỗi: " + result?.error, "error");
       await renderChannelList();
     });
     item.appendChild(removeBtn);
@@ -360,25 +336,12 @@ async function renderSubsList(subs) {
     addBtn.textContent = alreadyAdded ? "Đã thêm" : "+ Thêm";
     addBtn.disabled = alreadyAdded;
     addBtn.addEventListener("click", async () => {
-      const { channels: latest } = await getStorage({ channels: {} });
-      latest[sub.id] = {
-        id: sub.id,
-        title: sub.title,
-        thumbnail: sub.thumbnail,
-        watched: true,
-        mode: "all",
-        initialized: false,
-        seenVideoIds: [],
-        etag: "",
-        lastModified: "",
-        addedAt: Date.now(),
-        source: "subscription",
-      };
-      await setStorage({ channels: latest });
-      addBtn.textContent = "Đã thêm";
       addBtn.disabled = true;
-      await renderChannelList();
-      await sendMessage({ type: "initChannel", channelId: sub.id });
+      addBtn.textContent = "Đang kiểm tra live...";
+      const result = await sendMessage({ type: "addChannel", channel: sub, source: "subscription" });
+      addBtn.textContent = result?.ok ? "Đã thêm" : "Thử kiểm tra lại";
+      addBtn.disabled = !!result?.ok;
+      if (!result?.ok) setMsg(subsMsg, "Chưa hoàn tất kiểm tra: " + result?.error, "error");
       await renderChannelList();
     });
     item.appendChild(addBtn);
