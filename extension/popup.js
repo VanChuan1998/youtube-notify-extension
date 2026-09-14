@@ -93,7 +93,12 @@ async function loadSettings() {
   liveCheckInput.value = liveCheckSeconds || 30;
   liveEvery.textContent = liveCheckSeconds || 30;
 
-  if (status && status.lastError) setMsg(statusMsg, "Lỗi: " + status.lastError, "error");
+  if (status && status.lastError) {
+    setMsg(statusMsg, "Lỗi: " + status.lastError, "error");
+  } else {
+    // Xoá thông báo lỗi cũ khi background đã phục hồi credential/thành công.
+    setMsg(statusMsg, "", "");
+  }
 
   const parts = [];
   if (status && status.lastDiscoverAt) parts.push("Quét kênh: " + timeAgo(status.lastDiscoverAt));
@@ -501,6 +506,15 @@ async function tryRestoreGoogleSessionSilently() {
 
 // Cập nhật popup khi service worker ghi trạng thái mới trong lúc popup đang mở.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local") return;
-  if (changes.pending || changes.status || changes.channels) refresh();
+  if (area === "local" && (changes.pending || changes.status || changes.channels)) {
+    refresh();
+    return;
+  }
+
+  // Đồng bộ UI với token/account data thật trong session. Nếu token hết hạn và
+  // silent restore thất bại, background xoá oauthUser/fetchedSubs để popup không
+  // tiếp tục hiển thị sai trạng thái “Đã kết nối”.
+  if (area === "session" && (changes.oauthUser || changes.fetchedSubs || changes.oauthToken)) {
+    refresh();
+  }
 });

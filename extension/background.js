@@ -69,6 +69,21 @@ function removeSessionStorage(keys) {
   return new Promise((resolve) => chrome.storage.session.remove(keys, resolve));
 }
 
+async function rememberOAuthAuthorization(clientId) {
+  const normalizedClientId = (clientId || "").trim();
+  if (!normalizedClientId) return;
+  await setStorage({
+    googleOAuthAuthorized: true,
+    googleOAuthClientId: normalizedClientId,
+  });
+}
+
+async function clearOAuthSessionView() {
+  // Nếu không còn access token usable thì UI cũng không được tiếp tục hiển thị
+  // trạng thái “đã kết nối”. Danh sách kênh người dùng đã thêm vẫn nằm ở local.
+  await removeSessionStorage(["oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
+}
+
 async function saveOAuthSession(authRes, clientId) {
   const token = authRes && authRes.token ? authRes.token : "";
   if (!token) return "";
@@ -81,12 +96,7 @@ async function saveOAuthSession(authRes, clientId) {
   });
 
   // Chỉ lưu marker/client ID không nhạy cảm. Access token vẫn chỉ nằm trong session.
-  if (clientId) {
-    await setStorage({
-      googleOAuthAuthorized: true,
-      googleOAuthClientId: clientId,
-    });
-  }
+  await rememberOAuthAuthorization(clientId);
 
   return token;
 }
@@ -118,12 +128,17 @@ async function getCachedOAuthToken({ clientId = "", forceRefresh = false } = {})
       oauthTokenExpires: 0,
     });
     if (oauthToken && oauthTokenExpires && Date.now() < oauthTokenExpires) {
+      // Đồng bộ marker khi nâng cấp từ bản cũ hoặc khi marker local bị thiếu.
+      // Điều này đảm bảo background vẫn có client ID để silent re-auth về sau.
+      if (clientId) await rememberOAuthAuthorization(clientId);
       return oauthToken;
     }
   }
 
   await removeSessionStorage(["oauthToken", "oauthTokenExpires"]);
-  return restoreOAuthTokenSilently(clientId);
+  const restored = await restoreOAuthTokenSilently(clientId);
+  if (!restored) await clearOAuthSessionView();
+  return restored;
 }
 
 async function getChannels() {
@@ -603,9 +618,12 @@ async function checkPendingVideos() {
   // RSS vẫn phát hiện video mới nhưng extension giữ chúng trong hàng chờ cho tới
   // khi có credential để phân loại chính xác video thường/live/upcoming.
   if (!apiKey && !oauthToken) {
+    const { googleOAuthAuthorized } = await getStorage({ googleOAuthAuthorized: false });
     await setStorage({ pending });
     await setStatus({
-      lastError: "Cần API key hoặc kết nối Google để phân loại chính xác video/livestream đang chờ.",
+      lastError: googleOAuthAuthorized
+        ? "Kết nối Google hiện không có access token hợp lệ. Mở extension và bấm Kết nối Google/Làm mới để xác thực lại."
+        : "Cần API key hoặc kết nối Google để phân loại chính xác video/livestream đang chờ.",
       lastLiveCheckAt: now,
     });
     return;
@@ -786,6 +804,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
 
             const { subs, oauthUser } = await loadOAuthAccountData(token);
+
+            // OAuth vừa được xác nhận hợp lệ: xoá lỗi credential cũ và xử lý ngay
+            // các video đang chờ, thay vì đợi alarm kế tiếp.
+            await setStatus({ lastError: "" });
+            await checkPendingVideos();
+
             sendResponse({ ok: true, subs, oauthUser });
           } catch (err) {
             if (err && err.status === 401) {
@@ -804,6 +828,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
 
             const { subs, oauthUser } = await loadOAuthAccountData(token);
+            await setStatus({ lastError: "" });
+            await checkPendingVideos();
             sendResponse({ ok: true, connected: true, subs, oauthUser });
           } catch (err) {
             sendResponse({ ok: true, connected: false, error: err.message || String(err) });

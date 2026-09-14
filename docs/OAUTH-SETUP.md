@@ -125,7 +125,7 @@ Không commit client secret. Luồng extension không được nhúng client sec
 
 ## 6. Token và dữ liệu OAuth
 
-Bản hiện tại (v1.1.2):
+Bản hiện tại (v1.1.3):
 
 - giữ access token trong `chrome.storage.session`, không phải local storage bền;
 - lưu `googleOAuthAuthorized` và OAuth client ID (không phải secret/token) trong `chrome.storage.local` để biết có nên thử khôi phục kết nối;
