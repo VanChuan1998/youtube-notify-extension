@@ -276,9 +276,14 @@
         <td>Cho phép Extension biết rằng bạn từng cấp quyền và thử xin access token mới ở chế độ không tương tác (<code>prompt=none</code>) sau khi trình duyệt khởi động lại hoặc token hết hạn.</td>
       </tr>
       <tr>
-        <td>Danh sách subscriptions vừa tải và thông tin cơ bản của kênh YouTube thuộc tài khoản</td>
+        <td>Danh sách subscriptions vừa tải</td>
         <td><code>chrome.storage.session</code>; chỉ giữ tạm trong phiên Chrome</td>
         <td>Hiển thị danh sách để bạn tự chọn kênh muốn thêm.</td>
+      </tr>
+      <tr>
+        <td>Thông tin cơ bản của kênh YouTube thuộc tài khoản (tên, ảnh đại diện — không phải mật khẩu hay token)</td>
+        <td><code>chrome.storage.session</code> và <code>chrome.storage.local</code>; giữ bền trong local để popup hiển thị đúng ngay cả sau khi khởi động lại trình duyệt, tới khi bạn Ngắt kết nối</td>
+        <td>Hiển thị tên/ảnh đại diện tài khoản đã kết nối trong popup, kể cả trước khi access token được khôi phục xong.</td>
       </tr>
       <tr>
         <td>Kênh bạn chủ động bấm “+ Thêm” từ danh sách subscriptions</td>
@@ -352,7 +357,8 @@
       <tr><td>Your tracked-channel configuration, seen video IDs, pending livestream queue and RSS metadata</td><td><code>chrome.storage.local</code></td><td>Operate tracking, avoid reopening old videos and manage pending items.</td></tr>
       <tr><td>OAuth access token and expiry</td><td><code>chrome.storage.session</code>; only for the current browser session and deleted on disconnect/session end</td><td>Call the YouTube Data API on your behalf within the <code>youtube.readonly</code> scope.</td></tr>
       <tr><td>OAuth connection marker and OAuth client ID (no access token, password, or client secret)</td><td><code>chrome.storage.local</code> until you disconnect, clear Extension data, or uninstall</td><td>Let the Extension know that authorization was previously granted so it can try a non-interactive <code>prompt=none</code> authorization after browser restart or token expiry.</td></tr>
-      <tr><td>The subscriptions list just fetched and basic information about the account's YouTube channel</td><td><code>chrome.storage.session</code>; temporary for the current Chrome session</td><td>Display the list so you can choose channels to add.</td></tr>
+      <tr><td>The subscriptions list just fetched</td><td><code>chrome.storage.session</code>; temporary for the current Chrome session</td><td>Display the list so you can choose channels to add.</td></tr>
+      <tr><td>Basic information about the account's YouTube channel (name, avatar — not a password or token)</td><td><code>chrome.storage.session</code> and <code>chrome.storage.local</code>; kept in local storage so the popup still shows it correctly after a browser restart, until you Disconnect</td><td>Show the connected account's name/avatar in the popup, even before the access token has been silently restored.</td></tr>
       <tr><td>Channels you explicitly add from the subscriptions list</td><td><code>chrome.storage.local</code>, marked with source <code>subscription</code></td><td>Become tracking configuration and are deleted from the configuration when you use <strong>Disconnect</strong>.</td></tr>
     </table>
 

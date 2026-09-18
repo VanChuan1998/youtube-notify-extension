@@ -157,18 +157,21 @@ jobs:
           fi
 
       - name: OAuth token không được lưu bền và phải hỗ trợ silent restore
+        # Kiến trúc hiện tại chia logic OAuth vào extension/core/usecases/*.js
+        # (không còn nằm gộp trong background.js), nên quét toàn bộ thư mục core.
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          s = Path('extension/background.js').read_text(encoding='utf-8')
+          import re
+          s = "\n".join(p.read_text(encoding='utf-8') for p in Path('extension/core').rglob('*.js'))
           errors = []
-          if 'getAuthToken(false, clientId, "none")' not in s:
+          if not re.search(r'getAuthTokenWebFlow\(false,\s*client[Ii]d\w*,\s*"none"\)', s):
               errors.append('thiếu silent OAuth restore với prompt=none')
           if 'googleOAuthAuthorized: true' not in s:
               errors.append('thiếu persistent non-sensitive OAuth grant marker')
-          if 'removeStorage(["googleOAuthAuthorized", "googleOAuthClientId"])' not in s:
+          if 'removeLocal(["googleOAuthAuthorized"])' not in s:
               errors.append('Disconnect chưa xoá OAuth grant marker cục bộ')
-          if 'setStorage({ oauthToken' in s or 'chrome.storage.local.set({ oauthToken' in s:
+          if re.search(r'setLocal\(\{\s*oauthToken\b', s) or 'chrome.storage.local.set({ oauthToken' in s:
               errors.append('không được lưu OAuth access token trong chrome.storage.local')
           if errors:
               for e in errors: print('::error::' + e)
