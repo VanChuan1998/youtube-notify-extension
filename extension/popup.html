@@ -19,12 +19,20 @@
     <p id="addMsg" class="status"></p>
   </section>
 
+  <p id="pendingStatus" class="status" role="status"></p>
   <section class="card" id="pendingCard" style="display:none;">
     <h2>⏳ Đang chờ lên sóng</h2>
     <div id="pendingList" class="channel-list"></div>
     <p class="muted small">Extension kiểm tra mỗi <span id="liveEvery">30</span> giây và mở tab
       ngay khi stream bắt đầu phát.</p>
   </section>
+
+  <details class="card" id="unconfirmedCard" style="display:none;">
+    <summary id="unconfirmedSummary">Cần kiểm tra lại</summary>
+    <p class="muted small">Các video này chưa có trạng thái hoặc lịch phát đáng tin cậy.
+      Extension tiếp tục kiểm tra theo chế độ theo dõi của kênh.</p>
+    <div id="unconfirmedList" class="channel-list"></div>
+  </details>
 
   <section class="card">
     <h2>Danh sách kênh đang theo dõi</h2>

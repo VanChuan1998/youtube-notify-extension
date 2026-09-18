@@ -1,4 +1,5 @@
 // popup.js
+import { isWaitingForLive, hasStreamStarted, UPCOMING_GRACE_MS } from "./lib/decide.js";
 
 const OAUTH_CLIENT_ID = "736665623723-ovim8oer8j3n4de3otggf72oebgeursn.apps.googleusercontent.com";
 
@@ -18,7 +19,14 @@ const addMsg = $("addMsg");
 
 const pendingCard = $("pendingCard");
 const pendingList = $("pendingList");
+const pendingStatus = $("pendingStatus");
+const unconfirmedCard = $("unconfirmedCard");
+const unconfirmedList = $("unconfirmedList");
+const unconfirmedSummary = $("unconfirmedSummary");
 const liveEvery = $("liveEvery");
+let pendingRefreshing = true;
+let pendingRefreshError = "";
+let pendingRenderVersion = 0;
 
 const userInfoContainer = $("userInfoContainer");
 const userAvatar = $("userAvatar");
@@ -133,6 +141,7 @@ checkNowBtn.addEventListener("click", async () => {
   setMsg(statusMsg, "Đang kiểm tra...", "");
   checkNowBtn.disabled = true;
   const res = await sendMessage({ type: "checkNow" });
+  if (res?.ok) pendingRefreshError = "";
   checkNowBtn.disabled = false;
   setMsg(
     statusMsg,
@@ -257,17 +266,55 @@ async function renderChannelList() {
 // ---------- Đang chờ lên sóng ----------
 
 async function renderPending() {
+  const renderVersion = ++pendingRenderVersion;
   const { pending, channels } = await getStorage({ pending: {}, channels: {} });
-  // Phần này đúng nghĩa chỉ dành cho livestream đã xác nhận là UPCOMING.
-  // Video unknown đang chờ phân loại và livestream đang phát/kết thúc không được
-  // hiển thị trong card "Đang chờ lên sóng".
-  const list = Object.values(pending || {}).filter((entry) => entry && entry.state === "upcoming").sort(
+  // Callback đọc storage cũ về muộn không được dựng lại hàng chờ đã bị dọn.
+  if (renderVersion !== pendingRenderVersion) return;
+  const candidates = Object.values(pending || {}).filter((entry) =>
+    entry && channels[entry.channelId]?.watched && !entry.actualEndTime &&
+    (entry.state === "upcoming" || entry.state === "unknown")
+  );
+  const ready = entry => !pendingRefreshing && !pendingRefreshError && isWaitingForLive(entry);
+  const list = candidates.filter(ready).sort(
     (a, b) => {
       const ta = a.scheduledStartTime ? Date.parse(a.scheduledStartTime) : Infinity;
       const tb = b.scheduledStartTime ? Date.parse(b.scheduledStartTime) : Infinity;
       return ta - tb;
     }
   );
+  const uncertain = candidates.filter(entry => !ready(entry));
+  pendingStatus.textContent = pendingRefreshing ? "Đang kiểm tra lại trạng thái video..." : pendingRefreshError;
+  pendingStatus.style.display = pendingStatus.textContent ? "block" : "none";
+  unconfirmedCard.style.display = uncertain.length ? "block" : "none";
+  unconfirmedSummary.textContent = `Cần kiểm tra lại (${uncertain.length})`;
+  unconfirmedList.innerHTML = "";
+  for (const entry of uncertain) {
+    const item = document.createElement("div");
+    item.className = "channel-item";
+    const info = document.createElement("div");
+    info.className = "info";
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = entry.title || entry.videoId;
+    info.appendChild(title);
+    const subtitle = document.createElement("div");
+    subtitle.className = "subtitle";
+    subtitle.textContent = pendingRefreshing ? "Đang kiểm tra lại..." :
+      entry.verificationError || pendingRefreshError ||
+      (hasStreamStarted(entry) ? "Đã từng lên sóng; đang xác minh trạng thái hiện tại." :
+        !Number.isFinite(Date.parse(entry.scheduledStartTime || "")) ? "YouTube chưa cung cấp lịch phát được xác nhận." :
+        Date.now() > Date.parse(entry.scheduledStartTime) + UPCOMING_GRACE_MS ? "Đã quá giờ dự kiến; chưa xác nhận đang phát." :
+        "Trạng thái đã cũ; cần kiểm tra lại.");
+    info.appendChild(subtitle);
+    item.appendChild(info);
+    const open = document.createElement("a");
+    open.className = "secondary btn-link";
+    open.textContent = "Mở";
+    open.href = `https://www.youtube.com/watch?v=${entry.videoId}`;
+    open.target = "_blank";
+    item.appendChild(open);
+    unconfirmedList.appendChild(item);
+  }
 
   pendingCard.style.display = list.length ? "block" : "none";
   pendingList.innerHTML = "";
@@ -496,6 +543,11 @@ async function tryRestoreGoogleSessionSilently() {
     // bằng grant Google hiện có mà không hiện cửa sổ đăng nhập.
     await tryRestoreGoogleSessionSilently();
   }
+  // Revalidate kể cả khi oauthUser đã cached hoặc chỉ dùng API key.
+  const pendingResult = await sendMessage({ type: "refreshPending" });
+  pendingRefreshError = pendingResult?.ok ? "" : "Không kiểm tra lại được trạng thái: " + (pendingResult?.error || "mất kết nối");
+  pendingRefreshing = false;
+  await refresh();
   if (!isOAuthConfigured()) {
     loadSubsBtn.title = "Cần cấu hình OAuth client ID trước — xem docs/OAUTH-SETUP.md";
     setMsg(subsMsg, "Tính năng này cần OAuth client ID (xem docs/OAUTH-SETUP.md).", "");
@@ -506,6 +558,9 @@ async function tryRestoreGoogleSessionSilently() {
     }
   }
 })();
+
+// Nếu API ngừng cập nhật, nhãn upcoming hết hạn mà không cần đóng/mở popup.
+setInterval(() => { void renderPending(); }, 30000);
 
 // Cập nhật popup khi service worker ghi trạng thái mới trong lúc popup đang mở.
 chrome.storage.onChanged.addListener((changes, area) => {

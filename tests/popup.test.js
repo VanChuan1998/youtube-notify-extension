@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import * as decide from "../extension/lib/decide.js";
 import { harness, channelA as A, channel, video, apiVideo, pendingEntry } from "./helpers/background-harness.js";
 
 class Element {
@@ -22,8 +23,8 @@ async function popup(s) {
     else s.message(message).then(cb);
   };
   const context = vm.createContext({ chrome: s.chrome, document: { getElementById: get, createElement: tag => new Element(tag) },
-    confirm: () => true, console });
-  vm.runInContext(fs.readFileSync(new URL("../extension/popup.js", import.meta.url), "utf8"), context);
+    confirm: () => true, console, ...decide, setInterval: () => 0 });
+  vm.runInContext(fs.readFileSync(new URL("../extension/popup.js", import.meta.url), "utf8").replace(/^import .*;\r?\n/gm, ""), context);
   await vm.runInContext("refresh()", context);
   await new Promise(resolve => setImmediate(resolve));
   return { get, sent, context };
@@ -60,7 +61,53 @@ test("popup mode, disable and remove persist through background messages", async
 
 test("pending card renders only upcoming, never live/ended/unknown", async () => {
   const pending = Object.fromEntries(["upcoming", "live", "ended", "unknown"].map((state, i) => [video(i), pendingEntry(video(i), A, { state })]));
-  const s = harness({ local: { apiKey: "", channels: { [A]: channel() }, pending } });
+  const items = { [video(0)]: apiVideo(video(0), "upcoming"), [video(1)]: apiVideo(video(1), "live") };
+  const s = harness({ local: { channels: { [A]: channel() }, pending }, items });
   const p = await popup(s); assert.equal(p.get("pendingList").children.length, 1);
   assert.equal(p.get("pendingCard").style.display, "block");
+});
+
+test("opening popup with cached account rechecks and removes an ended waiting item", async () => {
+  const v = "ZM6xYUYPgPY";
+  const s = harness({ session: { oauthUser: { name: "Cached account" } }, local: { channels: { [A]: channel() },
+    pending: { [v]: pendingEntry(v, A, { state: "upcoming", scheduledStartTime: new Date(Date.now() + 86400000).toISOString(), lastCheckedAt: Date.now() }) } },
+    items: { [v]: apiVideo(v, "ended") } });
+  const p = await popup(s); assert.equal(s.local.pending[v], undefined);
+  assert.equal(p.get("pendingList").children.length, 0); assert.equal(p.get("unconfirmedList").children.length, 0);
+  assert.ok(p.sent.some(m => m.type === "refreshPending")); assert.equal(s.apiRequests().length, 1);
+});
+
+test("offline-like upcoming with no schedule goes to unconfirmed section, not waiting", async () => {
+  const v = "ZM6xYUYPgPY", item = apiVideo(v, "upcoming"); item.liveStreamingDetails = {};
+  const s = harness({ local: { channels: { [A]: channel() }, pending: { [v]: pendingEntry(v, A, { state: "upcoming" }) } }, items: { [v]: item } });
+  const p = await popup(s); assert.equal(p.get("pendingList").children.length, 0);
+  assert.equal(p.get("unconfirmedList").children.length, 1);
+  assert.equal(s.local.pending[v].state, "upcoming");
+});
+
+test("failed verification does not present cached upcoming as currently waiting", async () => {
+  const v = video(1);
+  const s = harness({ session: { oauthUser: { name: "Cached" } }, local: { channels: { [A]: channel() },
+    pending: { [v]: pendingEntry(v, A, { state: "upcoming", scheduledStartTime: new Date(Date.now() + 86400000).toISOString(), lastVerifiedAt: Date.now() }) } } });
+  s.apiStatus = 403;
+  const p = await popup(s); assert.equal(p.get("pendingList").children.length, 0);
+  assert.equal(p.get("unconfirmedList").children.length, 1); assert.ok(s.local.pending[v]);
+});
+
+test("late storage snapshot cannot resurrect a waiting row after cleanup", async () => {
+  const s = harness(), p = await popup(s), v = video(1);
+  const snapshot = { channels: { [A]: channel() }, pending: { [v]: pendingEntry(v, A, { state: "upcoming",
+    scheduledStartTime: new Date(Date.now() + 86400000).toISOString(), lastVerifiedAt: Date.now() }) } };
+  const originalGet = s.chrome.storage.local.get;
+  let resume, held = false;
+  s.chrome.storage.local.get = (keys, cb) => {
+    if (!held && keys.pending) {
+      held = true; return new Promise(resolve => { resume = () => { cb(snapshot); resolve(snapshot); }; });
+    }
+    return originalGet(keys, cb);
+  };
+  const slow = vm.runInContext("renderPending()", p.context);
+  await vm.runInContext("renderPending()", p.context);
+  resume(); await slow;
+  assert.equal(p.get("pendingList").children.length, 0); assert.equal(p.get("pendingCard").style.display, "none");
 });

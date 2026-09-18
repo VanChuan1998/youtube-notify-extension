@@ -26,6 +26,8 @@ import {
   shouldRecheck,
   isExpired,
   chunkIds,
+  hasStreamStarted,
+  isWaitingForLive,
 } from "./lib/decide.js";
 
 const ALARM_DISCOVER = "ytnotify_discover";
@@ -209,11 +211,11 @@ async function setStatus(patch) {
 }
 
 async function updateBadge() {
-  const { status, pending } = await getStorage({ status: {}, pending: {} });
+  const { status, pending, channels } = await getStorage({ status: {}, pending: {}, channels: {} });
   // Badge chỉ phản ánh đúng số livestream đang CHỜ lên sóng. Các video unknown
   // đang chờ phân loại và livestream đang phát (được giữ lại để theo dõi tới lúc
   // kết thúc) không được tính vào con số này.
-  const waiting = Object.values(pending || {}).filter((entry) => entry && entry.state === "upcoming").length;
+  const waiting = Object.values(pending || {}).filter((entry) => channels[entry?.channelId]?.watched && isWaitingForLive(entry)).length;
 
   if (status && status.lastError) {
     chrome.action.setBadgeText({ text: "!" });
@@ -294,7 +296,7 @@ async function apiFetch(path, params, credential = {}, options = {}) {
       url.searchParams.set("key", activeCredential.apiKey);
     }
 
-    const res = await fetch(url.toString(), { headers });
+    const res = await fetch(url.toString(), { headers, ...(path === "/videos" ? { cache: "no-store" } : {}) });
     const text = await res.text();
     let data;
     try {
@@ -657,6 +659,7 @@ async function discoverNewVideos({
         const seen = new Set(ch.seenVideoIds || []);
         const limit = ch.needsLiveProbe || !ch.initialized ? ADD_CHANNEL_LIVE_PROBE_LIMIT : probeLimit;
         for (const v of videos.slice(0, limit)) {
+          if ((ch.endedVideoIds || []).includes(v.videoId)) continue;
           if (pending[v.videoId]) {
             // Immediate/startup probe phải bỏ qua nhịp chờ của upcoming ở xa.
             pending[v.videoId].lastCheckedAt = 0;
@@ -687,6 +690,7 @@ async function discoverNewVideos({
         ch.lastCheckedTitle = videos[0].title;
       } else if (fresh.length) {
         for (const v of fresh) {
+          if ((ch.endedVideoIds || []).includes(v.videoId)) continue;
           if (pending[v.videoId]) continue;
           pending[v.videoId] = {
             videoId: v.videoId,
@@ -735,21 +739,34 @@ async function checkPendingVideos({ channelId = "", force = false } = {}) {
 
   // Dọn các mục quá hạn trước, để không kéo theo chúng vào lệnh gọi API.
   let changed = false;
+  const knownEndedTitles = [];
   for (const [id, entry] of Object.entries(pending)) {
-    if (!channels[entry.channelId]?.watched) {
+    if (!entry || !channels[entry.channelId]?.watched) {
       delete pending[id];
       changed = true;
       continue;
     }
     if (channelId && entry.channelId !== channelId) continue;
+    if (entry.state === "ended" || entry.actualEndTime || entry.state === "none" ||
+        (channels[entry.channelId].endedVideoIds || []).includes(entry.videoId)) {
+      // Nếu ID đã dọn trước đó, không lấy title từ entry cache cũ để ghi đè title cuối.
+      if (!(channels[entry.channelId].endedVideoIds || []).includes(entry.videoId)) {
+        knownEndedTitles.push({ channelId: entry.channelId, videoId: entry.videoId, title: entry.title,
+          ended: entry.state === "ended" || !!entry.actualEndTime });
+      }
+      delete pending[id];
+      changed = true;
+      continue;
+    }
     // Livestream đang phát được giữ lại cho tới khi API xác nhận đã kết thúc,
     // nhờ đó ta cập nhật được title cuối cùng sau live. Upcoming/unknown quá hạn
     // vẫn được dọn như trước để hàng chờ không phình vô hạn.
-    if (entry.state !== "live" && isExpired(entry, now)) {
+    if (!hasStreamStarted(entry) && isExpired(entry, now)) {
       delete pending[id];
       changed = true;
     }
   }
+  await updateLatestTitlesFromApi(knownEndedTitles);
 
   const due = Object.values(pending).filter((e) =>
     (!channelId || e.channelId === channelId) && (force || shouldRecheck(e, now))
@@ -768,6 +785,7 @@ async function checkPendingVideos({ channelId = "", force = false } = {}) {
   // khi có credential để phân loại chính xác video thường/live/upcoming.
   if (!apiKey && !oauthToken) {
     const { googleOAuthAuthorized } = await getStorage({ googleOAuthAuthorized: false });
+    for (const entry of due) entry.verificationError = "Chưa có kết nối để kiểm tra lại trạng thái.";
     await setStorage({ pending });
     await setStatus({
       lastError: googleOAuthAuthorized
@@ -787,6 +805,8 @@ async function checkPendingVideos({ channelId = "", force = false } = {}) {
         { apiKey, oauthToken: apiKey ? "" : oauthToken }
       );
 
+      if (!Array.isArray(data.items)) throw new Error("YouTube trả dữ liệu video không hợp lệ; sẽ kiểm tra lại.");
+
       const byId = new Map((data.items || []).map((it) => [it.id, it]));
 
       for (const videoId of batch) {
@@ -802,11 +822,16 @@ async function checkPendingVideos({ channelId = "", force = false } = {}) {
         }
 
         entry.lastCheckedAt = now;
+        entry.lastVerifiedAt = Date.now();
+        delete entry.verificationError;
         entry.title = (item.snippet && item.snippet.title) || entry.title;
         entry.scheduledStartTime =
           (item.liveStreamingDetails && item.liveStreamingDetails.scheduledStartTime) || "";
 
-        classified.push({ entry, state: classifyVideo(item) });
+        const state = classifyVideo(item, entry);
+        entry.actualStartTime = item.liveStreamingDetails?.actualStartTime || entry.actualStartTime || "";
+        entry.actualEndTime = item.liveStreamingDetails?.actualEndTime || entry.actualEndTime || "";
+        classified.push({ entry, state });
       }
     }
   } catch (err) {
@@ -817,7 +842,12 @@ async function checkPendingVideos({ channelId = "", force = false } = {}) {
     }
     // Hết quota/key sai/token hết hạn: giữ hàng chờ và thử lại sau khi người dùng
     // cung cấp credential hợp lệ.
-    await setStorage({ pending });
+    // Một lô lỗi không được bỏ kết quả ended/live của các lô đã thành công.
+    const completed = new Set(classified.map(({ entry }) => entry.videoId));
+    for (const entry of due) {
+      if (pending[entry.videoId] && !completed.has(entry.videoId)) entry.verificationError = err.message || String(err);
+    }
+    await handleClassified(classified, pending, channels);
     await setStatus({ lastError: err.message || String(err), lastLiveCheckAt: now });
     return;
   }
@@ -835,9 +865,14 @@ async function updateLatestTitlesFromApi(updates) {
   const latestChannels = await getChannels();
   let changed = false;
 
-  for (const { channelId, videoId, title } of updates) {
+  for (const { channelId, videoId, title, ended } of updates) {
     const ch = latestChannels[channelId];
-    if (!ch || !title) continue;
+    if (!ch) continue;
+    if (ended && !(ch.endedVideoIds || []).includes(videoId)) {
+      ch.endedVideoIds = rememberSeen(ch.endedVideoIds, [videoId]);
+      changed = true;
+    }
+    if (!title) continue;
 
     const newestKnownId = ch.lastCheckedVideoId || (Array.isArray(ch.seenVideoIds) ? ch.seenVideoIds[0] : "");
     if (newestKnownId && newestKnownId !== videoId) continue;
@@ -874,6 +909,12 @@ async function handleClassified(classified, pending, channelsArg) {
     }
     const mode = ch.mode === "liveOnly" ? "liveOnly" : "all";
     const previousState = entry.state || "unknown";
+
+    if (state === "unknown") {
+      entry.state = "unknown";
+      pending[entry.videoId] = entry;
+      continue;
+    }
 
     if (state === "upcoming") {
       // Chưa lên sóng: giữ lại trong hàng chờ, kiểm tra tiếp ở vòng sau.
@@ -934,6 +975,7 @@ async function handleClassified(classified, pending, channelsArg) {
         channelId: entry.channelId,
         videoId: entry.videoId,
         title: entry.title || "",
+        ended: state === "ended",
       });
     }
 
@@ -1088,6 +1130,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             await discoverNewVideos({ classifyImmediately: false, probeRecentForLive: true });
             await checkPendingVideos({ force: true });
           });
+          sendResponse({ ok: true });
+          return;
+        case "refreshPending":
+          await runMonitorTask(() => checkPendingVideos({ force: true }));
           sendResponse({ ok: true });
           return;
         case "updateIntervals":

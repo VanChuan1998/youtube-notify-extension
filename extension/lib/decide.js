@@ -16,6 +16,22 @@ export const FAR_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 /** Bỏ theo dõi stream đã lên lịch nhưng không bao giờ diễn ra. */
 export const PENDING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Chỉ là giới hạn hiển thị lịch cũ, KHÔNG phải bằng chứng stream đã kết thúc.
+export const UPCOMING_GRACE_MS = 2 * 60 * 60 * 1000;
+export const VERIFIED_STATE_TTL_MS = 10 * 60 * 1000;
+
+export function hasStreamStarted(entry = {}) {
+  return !!(entry.actualStartTime || entry.liveHandledAt || entry.state === "live");
+}
+
+export function isWaitingForLive(entry, now = Date.now()) {
+  if (!entry || entry.state !== "upcoming" || entry.actualEndTime || hasStreamStarted(entry) || entry.verificationError) return false;
+  const startsAt = Date.parse(entry.scheduledStartTime || "");
+  const checkedAt = Number(entry.lastVerifiedAt || 0);
+  return Number.isFinite(startsAt) && now <= startsAt + UPCOMING_GRACE_MS &&
+    checkedAt > 0 && now - checkedAt <= VERIFIED_STATE_TTL_MS;
+}
+
 /**
  * Tìm video chưa từng thấy ở kênh này.
  *
@@ -47,20 +63,23 @@ export function rememberSeen(seenVideoIds, newIds) {
  * liveBroadcastContent một mình là chưa đủ: nó vẫn báo "live" trong khoảng ngắn
  * sau khi stream kết thúc. Có actualEndTime nghĩa là đã tàn, coi như video thường.
  */
-export function classifyVideo(item) {
+export function classifyVideo(item, previous = {}) {
   const snippet = item.snippet || {};
   const live = item.liveStreamingDetails || {};
   const broadcast = snippet.liveBroadcastContent || "none";
 
-  if (live.actualEndTime) return "ended";
+  if (live.actualEndTime || previous.actualEndTime || previous.state === "ended") return "ended";
   if (broadcast === "live" && live.actualStartTime) return "live";
+  // Phản hồi mâu thuẫn không được đẩy một stream đã phát ngược về hàng chờ.
+  // Không suy đoán ended chỉ từ upcoming/offline; giữ lại để xác minh tiếp.
+  if ((broadcast === "live" || broadcast === "upcoming") && (live.actualStartTime || hasStreamStarted(previous))) return "unknown";
   if (broadcast === "upcoming") return "upcoming";
   if (broadcast === "live") return "upcoming"; // báo live nhưng chưa thực sự bắt đầu
 
   // Một số livestream vừa kết thúc có thể chuyển liveBroadcastContent về "none"
   // trước khi actualEndTime xuất hiện ổn định. Nếu đã từng có actualStartTime thì
   // chắc chắn đây không còn là video "upcoming" nữa -> coi là ended để dọn hàng chờ.
-  if (live.actualStartTime) return "ended";
+  if (live.actualStartTime || hasStreamStarted(previous)) return "ended";
 
   return "none";
 }
@@ -86,6 +105,7 @@ export function shouldOpenTab(state, mode) {
  * Chỉ siết nhịp khi sắp tới giờ phát, hoặc khi không biết giờ phát.
  */
 export function shouldRecheck(entry, now) {
+  if (entry.state === "unknown" || entry.verificationError || hasStreamStarted(entry)) return true;
   const last = entry.lastCheckedAt || 0;
   if (!entry.scheduledStartTime) return true; // không rõ giờ -> luôn kiểm tra
 
