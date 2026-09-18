@@ -1,24 +1,24 @@
 {
-  "name": "youtube-notify-extension",
-  "compatibility_date": "2026-09-09",
-  "main": "worker/index.js",
-  "assets": {
-    "directory": "./web",
-    // Cho phép truy cập /privacy-policy (không đuôi .html) mà không ra 404.
-    "html_handling": "auto-trailing-slash",
-    "not_found_handling": "404-page",
-    // Cần binding để worker/index.js tự forward request tĩnh tới ./web.
-    "binding": "ASSETS"
-  },
-  "routes": [
-    {
-      "pattern": "youtube-notification.chuan-nv.com",
-      "custom_domain": true
-    }
-  ],
-  "vars": {
-    // Client ID công khai (đi kèm client dùng cho extension/popup.js OAUTH_CLIENT_ID).
-    // Client secret KHÔNG đặt ở đây — set bằng: wrangler secret put OAUTH_CLIENT_SECRET
-    "OAUTH_CLIENT_ID": "736665623723-ovim8oer8j3n4de3otggf72oebgeursn.apps.googleusercontent.com"
-  }
+	"name": "youtube-notify-extension",
+	"compatibility_date": "2026-09-09",
+	"main": "worker/index.js",
+	"assets": {
+		"directory": "./web",
+		// Cho phép truy cập /privacy-policy (không đuôi .html) mà không ra 404.
+		"html_handling": "auto-trailing-slash",
+		"not_found_handling": "404-page",
+		// Cần binding để worker/index.js tự forward request tĩnh tới ./web.
+		"binding": "ASSETS"
+	},
+	"routes": [
+		{
+			"pattern": "youtube-notification.chuan-nv.com",
+			"custom_domain": true
+		}
+	],
+	"vars": {
+		// Client ID công khai (đi kèm client dùng cho extension/popup.js OAUTH_CLIENT_ID).
+		// Client secret KHÔNG đặt ở đây — set bằng: wrangler secret put OAUTH_CLIENT_SECRET
+		"OAUTH_CLIENT_ID": "736665623723-ovim8oer8j3n4de3otggf72oebgeursn.apps.googleusercontent.com"
+	}
 }
