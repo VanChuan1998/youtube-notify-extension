@@ -29,7 +29,8 @@ Source hiện tại dùng:
 
 ```text
 chrome.identity.launchWebAuthFlow()
-response_type=token
+response_type=code + PKCE (code_challenge/code_verifier, S256)
+access_type=offline
 redirect URI = chrome.identity.getRedirectURL()
 ```
 
@@ -39,7 +40,26 @@ Client ID nằm tại:
 extension/popup.js → OAUTH_CLIENT_ID
 ```
 
-Không dán client ID vào `manifest.json`: implementation hiện tại không có `manifest.oauth2`.
+**Client secret KHÔNG nằm trong extension.** Việc đổi authorization code / refresh token lấy
+access token đi qua một Cloudflare Worker proxy (`worker/index.js`), deploy cùng domain với
+website (`youtube-notification.chuan-nv.com`):
+
+```text
+POST https://youtube-notification.chuan-nv.com/oauth/exchange   (code -> access_token + refresh_token)
+POST https://youtube-notification.chuan-nv.com/oauth/refresh    (refresh_token -> access_token)
+```
+
+Worker giữ `OAUTH_CLIENT_SECRET` dưới dạng Cloudflare secret (không commit vào repo, set bằng
+`wrangler secret put OAUTH_CLIENT_SECRET`), và `OAUTH_CLIENT_ID` công khai trong `wrangler.jsonc`.
+Worker chỉ chuyển tiếp request sang `oauth2.googleapis.com/token`, không lưu trữ token hay dữ
+liệu người dùng ở đâu — xem code đầy đủ trong `worker/index.js`.
+
+> Lý do có Worker này: Authorization Code flow chuẩn của Google luôn yêu cầu client_secret ở bước
+> đổi code/refresh, kể cả với client loại "installed app". Vì extension chạy hoàn toàn phía
+> client, bất kỳ secret nào nhúng trực tiếp vào extension đều đọc được nếu unpack. Đưa bước gọi
+> Google token endpoint ra một Worker nhỏ giữ secret ở server side loại bỏ rủi ro đó — attacker chỉ
+> có thể lợi dụng Worker nếu có `code`/`refresh_token` hợp lệ, mà `code` chỉ được Google cấp cho
+> đúng `redirect_uri` dạng `https://<extension-id>.chromiumapp.org/` (chỉ extension mới nhận được).
 
 > Chrome/Google cũng có luồng dành riêng cho Chrome Extension credential qua `chrome.identity.getAuthToken()`. Đó là một migration riêng vì cần credential mới. Không đổi loại client ID giữa chừng nếu chưa chuẩn bị và kiểm thử credential mới.
 
@@ -119,24 +139,48 @@ Nếu tiếp tục dùng `launchWebAuthFlow()` hiện tại:
 const OAUTH_CLIENT_ID = "YOUR_CLIENT_ID.apps.googleusercontent.com";
 ```
 
-5. Reload extension.
+5. Trong Cloudflare Worker (không phải trong extension), cấu hình:
 
-Không commit client secret. Luồng extension không được nhúng client secret.
+```jsonc
+// wrangler.jsonc → vars (giá trị công khai)
+"OAUTH_CLIENT_ID": "YOUR_CLIENT_ID.apps.googleusercontent.com"
+```
+
+```bash
+# Secret thật — KHÔNG commit vào repo
+wrangler secret put OAUTH_CLIENT_SECRET
+```
+
+6. Deploy Worker (`npm run deploy` / `wrangler deploy`), reload extension.
+
+> Không commit client secret. Đây vẫn là ràng buộc gốc của dự án — nó chỉ được đáp ứng bằng cách
+> đưa bước cần secret ra khỏi extension, sang Worker (mục 2), thay vì nhúng thẳng vào code extension.
 
 ## 6. Token và dữ liệu OAuth
 
-Bản hiện tại (v1.1.3):
+Bản hiện tại (v1.1.9+, sau khi chuyển sang Authorization Code + PKCE):
 
-- giữ access token trong `chrome.storage.session`, không phải local storage bền;
-- lưu `googleOAuthAuthorized` và OAuth client ID (không phải secret/token) trong `chrome.storage.local` để biết có nên thử khôi phục kết nối;
-- sau browser restart hoặc khi token hết hạn, thử `launchWebAuthFlow({ interactive: false })` với `prompt=none`; nếu grant và Google browser session vẫn hợp lệ, Google cấp access token mới mà không hiện consent/login;
-- nếu YouTube Data API trả HTTP 401, xoá session token, thử silent re-auth và retry request đúng một lần;
-- nếu silent re-auth thất bại, không tự bật cửa sổ OAuth ở background; người dùng chỉ cần bấm **Kết nối Google** khi muốn kết nối lại;
+- giữ access token trong `chrome.storage.session` (không bền qua restart, theo thiết kế);
+- giữ `refresh_token` trong `chrome.storage.local` (`googleOAuthRefreshToken`) — bền qua restart
+  trình duyệt/PC. Đây là điểm khác biệt cốt lõi so với bản implicit-flow cũ;
+- lưu `googleOAuthAuthorized` và OAuth client ID trong `chrome.storage.local` để biết có nên thử
+  khôi phục kết nối;
+- khi cần token mới (session hết hạn hoặc vừa restart), **ưu tiên gọi thẳng
+  `POST /oauth/refresh` trên Worker proxy** — không cần mở `launchWebAuthFlow`, không phụ
+  thuộc cookie đăng nhập Google hay chính sách chặn cookie bên thứ ba của trình duyệt (đây chính
+  là nguyên nhân khiến bản cũ hay báo "không có access token hợp lệ" sau khi restart PC trên Edge,
+  vì Edge có thể chặn cookie cần thiết cho `launchWebAuthFlow({interactive:false, prompt:"none"})`);
+- chỉ khi chưa có `refresh_token` (ví dụ tài khoản nâng cấp từ bản cũ) mới thử lại
+  `launchWebAuthFlow({ interactive: false })` với `prompt=none` như phương án dự phòng;
+- nếu YouTube Data API trả HTTP 401, xoá session token, thử renew (refresh token trước, silent
+  webflow sau) và retry request đúng một lần;
+- nếu cả hai cách đều thất bại, không tự bật cửa sổ OAuth ở background; người dùng chỉ cần bấm
+  **Kết nối Google** khi muốn kết nối lại;
 - giữ subscriptions vừa tải và thông tin kênh tài khoản trong session;
-- khi người dùng bấm **Ngắt kết nối**, gọi `https://oauth2.googleapis.com/revoke`, xoá OAuth session data, marker kết nối cục bộ và các kênh đã thêm trực tiếp từ subscriptions;
-- Privacy Policy mô tả đúng các hành vi trên.
-
-Đây vẫn là implicit access-token flow (`response_type=token`), không có refresh token và không có backend. Silent restore phụ thuộc vào việc grant OAuth chưa bị thu hồi và Google browser session vẫn cho phép xác thực không tương tác.
+- khi người dùng bấm **Ngắt kết nối**, thu hồi `refresh_token` (nếu có, ưu tiên vì thu hồi toàn bộ
+  grant) qua `https://oauth2.googleapis.com/revoke`, xoá OAuth session data, `googleOAuthRefreshToken`,
+  marker kết nối cục bộ và các kênh đã thêm trực tiếp từ subscriptions;
+- Privacy Policy (`web/privacy-policy.html`, bản tiếng Việt và tiếng Anh) đã cập nhật để mô tả đúng các hành vi trên, gồm việc `refresh_token` được lưu cục bộ.
 
 ## 7. Request verification lại
 

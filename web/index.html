@@ -447,10 +447,10 @@
       <h3>Tài khoản Google và dữ liệu YouTube</h3>
       <p>Bạn có thể mở extension, thêm channel ID và xem toàn bộ thông tin ứng dụng mà không cần đăng nhập Google. Chỉ khi bạn chủ động chọn <strong>“Kết nối Google &amp; tải kênh đã đăng ký”</strong>, extension mới bắt đầu OAuth.</p>
       <p>Extension chỉ yêu cầu scope chỉ đọc <code>https://www.googleapis.com/auth/youtube.readonly</code> để đọc danh sách kênh YouTube mà tài khoản đã đăng ký và thông tin cơ bản của kênh YouTube thuộc tài khoản. Scope này không cho phép Auto Mở Live đăng video, sửa nội dung, xoá nội dung, bình luận hay thay đổi subscriptions.</p>
-      <p>Access token và dữ liệu vừa tải chỉ được giữ tạm trong phiên trình duyệt. Access token không được lưu bền trong <code>chrome.storage.local</code>. Sau khi Chrome/Edge khởi động lại, extension có thể thử xin access token mới ở chế độ không tương tác nếu quyền OAuth vẫn còn hiệu lực và Google có thể xác thực người dùng mà không cần tương tác. Khi gọi API, token được gửi trực tiếp tới Google/YouTube qua HTTPS; nhà phát triển không vận hành backend nhận token hoặc dữ liệu tài khoản. Nút <strong>Ngắt kết nối</strong> xoá dữ liệu OAuth cục bộ và cố gắng thu hồi token tại Google.</p>
+      <p>Access token và dữ liệu vừa tải chỉ được giữ tạm trong phiên trình duyệt; access token không được lưu bền trong <code>chrome.storage.local</code>. Để không phải đăng nhập lại sau mỗi lần khởi động lại trình duyệt/PC, extension lưu OAuth refresh token cục bộ trong <code>chrome.storage.local</code> và dùng nó xin access token mới trực tiếp từ Google. Bước đổi code/refresh token này đi qua một Cloudflare Worker do nhà phát triển vận hành — Worker chỉ trung chuyển kỹ thuật (không lưu, không log) vì cần tới OAuth client secret; ngoài bước đó, token được gửi trực tiếp tới Google/YouTube qua HTTPS. Nút <strong>Ngắt kết nối</strong> xoá dữ liệu OAuth cục bộ (kể cả refresh token) và cố gắng thu hồi token tại Google.</p>
       <p><a href="https://youtube-notification.chuan-nv.com/privacy-policy.html">Đọc Chính sách bảo mật đầy đủ</a> · <a href="https://security.google.com/settings/security/permissions">Quản lý/thu hồi quyền trong Google Account</a></p>
       <div class="en" lang="en">
-        <p><strong>Google sign-in is optional.</strong> The OAuth flow only starts after the user explicitly chooses to import subscriptions. Auto Mở Live requests only the read-only <code>youtube.readonly</code> scope to retrieve subscribed channels and basic YouTube channel information. OAuth access tokens are kept only in browser session storage and are never persisted in local storage. After a browser restart, the Extension may silently request a new access token when an existing Google grant/session permits it. Tokens are sent directly to Google APIs when required and are not sent to a developer-operated server.</p>
+        <p><strong>Google sign-in is optional.</strong> The OAuth flow only starts after the user explicitly chooses to import subscriptions. Auto Mở Live requests only the read-only <code>youtube.readonly</code> scope to retrieve subscribed channels and basic YouTube channel information. OAuth access tokens are kept only in browser session storage and are never persisted in local storage. To avoid asking you to sign in again after every browser/PC restart, the Extension stores an OAuth refresh token locally and uses it to get a new access token directly from Google; that exchange passes through a Cloudflare Worker the developer operates purely as a technical pass-through (no storage, no logging), since it requires the OAuth client secret. Tokens are otherwise sent directly to Google APIs over HTTPS.</p>
       </div>
     </div>
   </section>
@@ -477,7 +477,7 @@
       </div>
       <div class="feature">
         <div class="ico">🔒</div>
-        <div><h4>Kết nối mạng giới hạn</h4><p>Manifest giới hạn các host cần thiết cho YouTube/Google API và endpoint thu hồi OAuth. Không có analytics, telemetry hay backend của nhà phát triển.</p></div>
+        <div><h4>Kết nối mạng giới hạn</h4><p>Manifest giới hạn các host cần thiết cho YouTube/Google API, endpoint thu hồi OAuth, và Worker trung chuyển token của chính dự án. Không có analytics, telemetry hay backend lưu trữ dữ liệu.</p></div>
       </div>
       <div class="feature">
         <div class="ico">🧩</div>
@@ -488,7 +488,7 @@
 
   <section>
     <div class="privacy-note">
-      <p>Nhà phát triển không thu thập hoặc bán dữ liệu người dùng và không vận hành backend cho extension. Các yêu cầu cần thiết được gửi trực tiếp tới YouTube/Google; OAuth chỉ chạy khi người dùng chủ động chọn. Xem chi tiết cách dữ liệu được truy cập, lưu và xoá.</p>
+      <p>Nhà phát triển không thu thập hoặc bán dữ liệu người dùng và không vận hành backend lưu trữ dữ liệu cho extension. Các yêu cầu cần thiết được gửi trực tiếp tới YouTube/Google (một bước OAuth đi qua Worker trung chuyển không lưu trữ của chính dự án); OAuth chỉ chạy khi người dùng chủ động chọn. Xem chi tiết cách dữ liệu được truy cập, lưu và xoá.</p>
       <div>
         <a class="btn ghost" href="https://youtube-notification.chuan-nv.com/privacy-policy.html">Chính sách bảo mật</a>
         <a class="btn ghost" href="https://youtube-notification.chuan-nv.com/terms.html" style="margin-left: 8px;">Điều khoản sử dụng</a>

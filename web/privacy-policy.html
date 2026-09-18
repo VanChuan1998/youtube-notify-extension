@@ -215,7 +215,7 @@
   </div>
 
   <section class="lang active" id="vi">
-    <p><strong>Auto Mở Live</strong> (sau đây gọi là “Extension”) là tiện ích mở rộng Chrome giúp bạn theo dõi video mới và livestream từ các kênh YouTube do bạn tự chọn. Extension sử dụng YouTube API Services và một số endpoint công khai của YouTube. Nhà phát triển không vận hành backend nhận dữ liệu người dùng.</p>
+    <p><strong>Auto Mở Live</strong> (sau đây gọi là “Extension”) là tiện ích mở rộng Chrome giúp bạn theo dõi video mới và livestream từ các kênh YouTube do bạn tự chọn. Extension sử dụng YouTube API Services và một số endpoint công khai của YouTube. Nhà phát triển không vận hành backend lưu trữ dữ liệu người dùng; một Cloudflare Worker nhỏ chỉ đóng vai trò trung chuyển kỹ thuật cho một bước của luồng OAuth (xem chi tiết bên dưới).</p>
 
     <h2>Đăng nhập Google là tuỳ chọn</h2>
     <p>Bạn không cần đăng nhập Google để mở extension hoặc xem trang web này. Luồng OAuth chỉ bắt đầu khi bạn chủ động bấm <strong>“Kết nối Google &amp; tải kênh đã đăng ký”</strong>. Extension chỉ yêu cầu scope chỉ đọc <code>https://www.googleapis.com/auth/youtube.readonly</code> để đọc danh sách kênh YouTube mà tài khoản đã đăng ký, thông tin cơ bản của kênh YouTube thuộc tài khoản, và dùng YouTube Data API để phân loại trạng thái video/livestream khi access token còn hiệu lực.</p>
@@ -242,7 +242,12 @@
       <tr>
         <td><code>oauth2.googleapis.com/revoke</code></td>
         <td>Khi bạn bấm <strong>Ngắt kết nối</strong></td>
-        <td>Access token hiện có được gửi tới Google để yêu cầu thu hồi quyền OAuth.</td>
+        <td>Access token hoặc refresh token hiện có được gửi tới Google để yêu cầu thu hồi quyền OAuth.</td>
+      </tr>
+      <tr>
+        <td><code>youtube-notification.chuan-nv.com/oauth/exchange</code>, <code>/oauth/refresh</code></td>
+        <td>Ngay sau khi bạn đăng nhập Google, và mỗi khi cần access token mới (ví dụ sau khi khởi động lại trình duyệt)</td>
+        <td>Một Cloudflare Worker do nhà phát triển vận hành, đóng vai trò trung chuyển (proxy) để đổi authorization code hoặc refresh token lấy access token với Google — việc này cần đến OAuth client secret mà Extension không thể giữ an toàn phía client. Worker chỉ chuyển tiếp request tới <code>oauth2.googleapis.com/token</code> và trả kết quả về, <strong>không lưu trữ, không ghi log</strong> access token, refresh token hay dữ liệu tài khoản Google của bạn. Mã nguồn Worker công khai trong repo của dự án.</td>
       </tr>
       <tr>
         <td>Các URL ảnh thumbnail do YouTube/Google trả về</td>
@@ -250,7 +255,7 @@
         <td>Trình duyệt tải ảnh từ URL do YouTube/Google cung cấp.</td>
       </tr>
     </table>
-    <p>Như mọi yêu cầu mạng khác, Google/YouTube có thể nhận thông tin mạng tiêu chuẩn như địa chỉ IP và user agent khi trình duyệt kết nối tới các dịch vụ của họ. Extension không gửi analytics hoặc telemetry tới nhà phát triển.</p>
+    <p>Như mọi yêu cầu mạng khác, Google/YouTube (và Cloudflare Worker nêu trên) có thể nhận thông tin mạng tiêu chuẩn như địa chỉ IP và user agent khi trình duyệt kết nối tới các dịch vụ này. Extension không gửi analytics hoặc telemetry tới nhà phát triển.</p>
 
     <h2>Dữ liệu lưu trên thiết bị</h2>
     <table>
@@ -271,9 +276,9 @@
         <td>Gọi YouTube Data API thay mặt bạn trong phạm vi <code>youtube.readonly</code>.</td>
       </tr>
       <tr>
-        <td>Marker kết nối OAuth và OAuth client ID (không chứa access token, mật khẩu hay client secret)</td>
+        <td>Marker kết nối OAuth, OAuth client ID và OAuth refresh token (không chứa mật khẩu hay client secret)</td>
         <td><code>chrome.storage.local</code>; tồn tại tới khi bạn bấm <strong>Ngắt kết nối</strong>, xoá dữ liệu extension hoặc gỡ extension</td>
-        <td>Cho phép Extension biết rằng bạn từng cấp quyền và thử xin access token mới ở chế độ không tương tác (<code>prompt=none</code>) sau khi trình duyệt khởi động lại hoặc token hết hạn.</td>
+        <td>Cho phép Extension biết rằng bạn từng cấp quyền và tự xin access token mới trực tiếp từ Google (không cần mở lại cửa sổ đăng nhập) sau khi trình duyệt/PC khởi động lại hoặc token hết hạn, kể cả khi trình duyệt chặn cookie bên thứ ba.</td>
       </tr>
       <tr>
         <td>Danh sách subscriptions vừa tải</td>
@@ -293,16 +298,16 @@
     </table>
 
     <div class="callout">
-      Nhà phát triển <strong>không nhận, không bán và không chia sẻ</strong> Google user data qua một backend riêng. Dữ liệu OAuth chỉ được truyền trực tiếp giữa Extension và Google/YouTube khi cần cho chức năng đã mô tả. Access token không được ghi vào <code>chrome.storage.local</code>. Sau khi trình duyệt khởi động lại, Extension có thể yêu cầu Google cấp access token mới ở chế độ không tương tác nếu quyền OAuth vẫn còn hiệu lực và Google có thể xác thực người dùng mà không cần tương tác. Extension không đọc mật khẩu Google, cookie đăng nhập, lịch sử duyệt web hay nội dung của các tab khác.
+      Nhà phát triển <strong>không nhận, không bán và không chia sẻ</strong> Google user data qua một backend lưu trữ. Dữ liệu OAuth được truyền giữa Extension và Google/YouTube khi cần cho chức năng đã mô tả; bước đổi authorization code/refresh token lấy access token đi qua một Cloudflare Worker do nhà phát triển vận hành, chỉ đóng vai trò trung chuyển kỹ thuật (không lưu trữ, không ghi log dữ liệu đi qua) vì cần đến OAuth client secret. Access token không được ghi vào <code>chrome.storage.local</code>. Sau khi trình duyệt/PC khởi động lại, Extension dùng refresh token đã lưu để tự xin access token mới trực tiếp từ Google (qua Worker nêu trên) mà không cần bạn đăng nhập lại. Extension không đọc mật khẩu Google, cookie đăng nhập, lịch sử duyệt web hay nội dung của các tab khác.
     </div>
 
     <h2>Cơ chế bảo vệ dữ liệu nhạy cảm</h2>
     <ul>
       <li><strong>Mã hoá khi truyền:</strong> mọi OAuth request, YouTube Data API request và yêu cầu thu hồi token đều sử dụng <strong>HTTPS/TLS</strong>. Access token chỉ được gửi trực tiếp tới endpoint của Google trong header Authorization hoặc tới endpoint thu hồi của Google.</li>
-      <li><strong>Không lưu token bền vững:</strong> OAuth access token chỉ nằm trong <code>chrome.storage.session</code>; Extension không ghi token vào <code>chrome.storage.local</code>, <code>chrome.storage.sync</code>, log, analytics hoặc máy chủ của nhà phát triển. Token bị xoá khi phiên trình duyệt kết thúc, khi người dùng Ngắt kết nối hoặc khi đặt lại quyền Google.</li>
+      <li><strong>Access token không bền vững; refresh token lưu cục bộ có kiểm soát:</strong> OAuth access token chỉ nằm trong <code>chrome.storage.session</code> và bị xoá khi phiên trình duyệt kết thúc. Để tránh việc bạn phải đăng nhập lại Google mỗi khi khởi động lại trình duyệt/PC, Extension lưu OAuth refresh token trong <code>chrome.storage.local</code> của chính trình duyệt bạn — không đồng bộ (<code>chrome.storage.sync</code>), không ghi log/analytics, không gửi tới máy chủ của nhà phát triển. Refresh token chỉ được Extension dùng để tự xin access token mới trực tiếp từ Google, và bị xoá khi người dùng Ngắt kết nối hoặc đặt lại quyền Google.</li>
       <li><strong>Giảm quyền tối đa:</strong> Extension chỉ yêu cầu scope chỉ đọc <code>youtube.readonly</code>; không yêu cầu quyền upload, sửa, xoá, bình luận hoặc quản lý tài khoản YouTube.</li>
       <li><strong>Cô lập trong Extension:</strong> OAuth token không được chèn vào trang YouTube, không được cung cấp cho content script hay JavaScript của website. Content Security Policy của Extension chỉ cho chạy script đóng gói cùng Extension và giới hạn kết nối mạng tới các endpoint Google/YouTube cần thiết.</li>
-      <li><strong>Không có backend thu thập dữ liệu:</strong> nhà phát triển không vận hành máy chủ nhận OAuth token hoặc Google user data, vì vậy dữ liệu nhạy cảm này không được sao chép vào cơ sở dữ liệu/server log của nhà phát triển.</li>
+      <li><strong>Không có backend lưu trữ dữ liệu:</strong> Worker trung chuyển OAuth token (mô tả ở trên) không lưu trữ hay ghi log token/dữ liệu người dùng — nó chỉ chuyển tiếp request tới Google rồi trả kết quả về ngay lập tức. Nhà phát triển không vận hành cơ sở dữ liệu hay server log nào lưu trữ OAuth token hoặc Google user data.</li>
       <li><strong>Thu hồi và xoá chủ động:</strong> nút <strong>Ngắt kết nối</strong> hoặc <strong>Đặt lại quyền Google</strong> xoá OAuth data cục bộ và cố gắng thu hồi quyền tại Google. Người dùng cũng có thể thu hồi quyền trực tiếp trong Google Account.</li>
     </ul>
     <p>Các dữ liệu cấu hình không chứa OAuth access token (ví dụ danh sách kênh đang theo dõi, video ID đã thấy và marker kết nối không nhạy cảm) có thể được lưu trong <code>chrome.storage.local</code> của profile trình duyệt để Extension hoạt động qua các lần khởi động lại.</p>
@@ -316,6 +321,7 @@
       <li><code>host_permissions: youtube.com</code> — đọc feed video công khai và mở URL video.</li>
       <li><code>host_permissions: googleapis.com</code> — gọi YouTube Data API v3.</li>
       <li><code>host_permissions: oauth2.googleapis.com</code> — thu hồi access token khi bạn chọn Ngắt kết nối.</li>
+      <li><code>host_permissions: youtube-notification.chuan-nv.com</code> — gọi tới Worker trung chuyển OAuth token của nhà phát triển (mô tả ở trên) để đổi/làm mới token.</li>
     </ul>
 
     <h2>Chia sẻ, bán và mục đích sử dụng</h2>
@@ -333,7 +339,7 @@
   </section>
 
   <section class="lang" id="en">
-    <p><strong>Auto Mở Live</strong> (the “Extension”) is a Chrome extension that tracks new videos and livestreams from YouTube channels selected by the user. The Extension uses YouTube API Services and a public YouTube feed endpoint. The developer does not operate a backend that receives user data.</p>
+    <p><strong>Auto Mở Live</strong> (the “Extension”) is a Chrome extension that tracks new videos and livestreams from YouTube channels selected by the user. The Extension uses YouTube API Services and a public YouTube feed endpoint. The developer does not operate a backend that stores user data; a small Cloudflare Worker acts only as a pass-through proxy for one OAuth step (see below).</p>
 
     <h2>Google sign-in is optional</h2>
     <p>You do not need to sign in to Google to open the Extension or view this website. OAuth starts only after you explicitly choose <strong>“Connect Google &amp; load subscribed channels.”</strong> The Extension requests only the read-only <code>https://www.googleapis.com/auth/youtube.readonly</code> scope to retrieve subscribed YouTube channels, basic information about the account's YouTube channel, and to classify video/livestream status while the token is valid.</p>
@@ -345,10 +351,11 @@
       <tr><td><code>youtube.com/feeds/videos.xml</code></td><td>Periodically for tracked channels</td><td>The channel ID needed to read the feed and detect new videos.</td></tr>
       <tr><td><code>accounts.google.com</code></td><td>Only after you choose to connect Google</td><td>OAuth client ID, redirect URI and the <code>youtube.readonly</code> scope. Google handles the sign-in/consent screen; the Extension does not read your Google password.</td></tr>
       <tr><td><code>www.googleapis.com/youtube/v3</code></td><td>When you use your own API key or after granting OAuth access</td><td>Your API key or OAuth access token plus necessary channel/video/subscription request parameters. OAuth tokens are sent only to Google over HTTPS in the Authorization header.</td></tr>
-      <tr><td><code>oauth2.googleapis.com/revoke</code></td><td>When you choose <strong>Disconnect</strong></td><td>The current access token is sent to Google to request revocation.</td></tr>
+      <tr><td><code>oauth2.googleapis.com/revoke</code></td><td>When you choose <strong>Disconnect</strong></td><td>The current access or refresh token is sent to Google to request revocation.</td></tr>
+      <tr><td><code>youtube-notification.chuan-nv.com/oauth/exchange</code>, <code>/oauth/refresh</code></td><td>Right after you sign in with Google, and whenever a new access token is needed (e.g. after a browser restart)</td><td>A Cloudflare Worker operated by the developer acts as a pass-through proxy to exchange an authorization code or refresh token for an access token with Google — a step that requires the OAuth client secret, which the Extension cannot hold securely on the client. The Worker only forwards the request to <code>oauth2.googleapis.com/token</code> and returns the result; it <strong>does not store or log</strong> your access token, refresh token, or Google account data. Its source code is public in the project's repository.</td></tr>
       <tr><td>Thumbnail URLs returned by YouTube/Google</td><td>When the popup displays channel images</td><td>The browser loads the image from the URL supplied by YouTube/Google.</td></tr>
     </table>
-    <p>As with ordinary network requests, Google/YouTube may receive standard network information such as your IP address and user agent. The Extension sends no analytics or telemetry to the developer.</p>
+    <p>As with ordinary network requests, Google/YouTube (and the Cloudflare Worker above) may receive standard network information such as your IP address and user agent. The Extension sends no analytics or telemetry to the developer.</p>
 
     <h2>Data stored on your device</h2>
     <table>
@@ -356,23 +363,23 @@
       <tr><td>Your YouTube Data API key <em>(optional)</em></td><td><code>chrome.storage.local</code> until removed by you or the Extension is uninstalled</td><td>Call public YouTube Data API endpoints for channel lookup and video/livestream classification.</td></tr>
       <tr><td>Your tracked-channel configuration, seen video IDs, pending livestream queue and RSS metadata</td><td><code>chrome.storage.local</code></td><td>Operate tracking, avoid reopening old videos and manage pending items.</td></tr>
       <tr><td>OAuth access token and expiry</td><td><code>chrome.storage.session</code>; only for the current browser session and deleted on disconnect/session end</td><td>Call the YouTube Data API on your behalf within the <code>youtube.readonly</code> scope.</td></tr>
-      <tr><td>OAuth connection marker and OAuth client ID (no access token, password, or client secret)</td><td><code>chrome.storage.local</code> until you disconnect, clear Extension data, or uninstall</td><td>Let the Extension know that authorization was previously granted so it can try a non-interactive <code>prompt=none</code> authorization after browser restart or token expiry.</td></tr>
+      <tr><td>OAuth connection marker, OAuth client ID, and OAuth refresh token (no password or client secret)</td><td><code>chrome.storage.local</code> until you disconnect, clear Extension data, or uninstall</td><td>Let the Extension know that authorization was previously granted, and let it obtain a new access token directly from Google (without reopening a sign-in window) after browser/PC restart or token expiry, including when the browser blocks third-party cookies.</td></tr>
       <tr><td>The subscriptions list just fetched</td><td><code>chrome.storage.session</code>; temporary for the current Chrome session</td><td>Display the list so you can choose channels to add.</td></tr>
       <tr><td>Basic information about the account's YouTube channel (name, avatar — not a password or token)</td><td><code>chrome.storage.session</code> and <code>chrome.storage.local</code>; kept in local storage so the popup still shows it correctly after a browser restart, until you Disconnect</td><td>Show the connected account's name/avatar in the popup, even before the access token has been silently restored.</td></tr>
       <tr><td>Channels you explicitly add from the subscriptions list</td><td><code>chrome.storage.local</code>, marked with source <code>subscription</code></td><td>Become tracking configuration and are deleted from the configuration when you use <strong>Disconnect</strong>.</td></tr>
     </table>
 
     <div class="callout">
-      The developer <strong>does not receive, sell, or share</strong> Google user data through a developer-operated backend. OAuth data is transmitted only between the Extension and Google/YouTube as required for the disclosed functionality. Access tokens are never written to <code>chrome.storage.local</code>. After a browser restart, the Extension may ask Google for a new access token non-interactively when the existing OAuth grant remains valid and Google can authenticate the user without interaction. The Extension does not read your Google password, sign-in cookies, browsing history, or the contents of other tabs.
+      The developer <strong>does not receive, sell, or share</strong> Google user data through a data-storing backend. OAuth data is transmitted between the Extension and Google/YouTube as required for the disclosed functionality; the step that exchanges an authorization code or refresh token for an access token passes through a Cloudflare Worker operated by the developer, acting only as a technical pass-through (no storage, no logging of the data it forwards) because that step requires the OAuth client secret. Access tokens are never written to <code>chrome.storage.local</code>. After a browser/PC restart, the Extension uses its stored refresh token to obtain a new access token directly from Google (via the Worker above) without asking you to sign in again. The Extension does not read your Google password, sign-in cookies, browsing history, or the contents of other tabs.
     </div>
 
     <h2>Data protection and security mechanisms</h2>
     <ul>
       <li><strong>Encryption in transit:</strong> all OAuth requests, YouTube Data API requests, and token-revocation requests use <strong>HTTPS/TLS</strong>. OAuth access tokens are sent only to Google endpoints in the Authorization header or to Google's revocation endpoint.</li>
-      <li><strong>No persistent access-token storage:</strong> OAuth access tokens are kept only in <code>chrome.storage.session</code>. The Extension does not write access tokens to <code>chrome.storage.local</code>, <code>chrome.storage.sync</code>, logs, analytics, or a developer-operated server. Session tokens are cleared when the browser session ends, when the user disconnects, or when Google authorization is reset.</li>
+      <li><strong>Access tokens are not persisted; refresh tokens are stored locally with limits:</strong> OAuth access tokens are kept only in <code>chrome.storage.session</code> and are cleared when the browser session ends. To avoid asking you to sign in again after every browser/PC restart, the Extension stores the OAuth refresh token in your own browser's <code>chrome.storage.local</code> — never synced (<code>chrome.storage.sync</code>), logged, sent to analytics, or transmitted to a developer-operated server. The refresh token is used only to obtain a new access token directly from Google, and is deleted when you disconnect or reset Google authorization.</li>
       <li><strong>Least-privilege access:</strong> the Extension requests only the read-only <code>youtube.readonly</code> scope and does not request upload, edit, delete, comment, or account-management permissions.</li>
       <li><strong>Extension isolation:</strong> OAuth tokens are not injected into YouTube pages and are not exposed to website JavaScript or content scripts. The Extension Content Security Policy allows packaged scripts only and restricts network connections to the Google/YouTube endpoints required for the disclosed functionality.</li>
-      <li><strong>No developer data backend:</strong> the developer does not operate a server that receives OAuth tokens or Google user data, so this sensitive data is not copied into a developer database or server logs.</li>
+      <li><strong>No data-storing backend:</strong> the token-relay Worker described above does not store or log tokens or user data — it forwards the request to Google and returns the result immediately. The developer does not operate a database or server logs that retain OAuth tokens or Google user data.</li>
       <li><strong>User-controlled revocation and deletion:</strong> <strong>Disconnect</strong> and <strong>Reset Google authorization</strong> clear local OAuth data and attempt to revoke access at Google. Users can also revoke access directly from their Google Account.</li>
     </ul>
     <p>Non-token configuration data (for example tracked channels, seen video IDs, and a non-sensitive connection marker) may remain in <code>chrome.storage.local</code> in the browser profile so the Extension can operate across browser restarts.</p>
@@ -386,6 +393,7 @@
       <li><code>host_permissions: youtube.com</code> — read the public video feed and open video URLs.</li>
       <li><code>host_permissions: googleapis.com</code> — call YouTube Data API v3.</li>
       <li><code>host_permissions: oauth2.googleapis.com</code> — revoke the access token when you disconnect.</li>
+      <li><code>host_permissions: youtube-notification.chuan-nv.com</code> — reach the developer's token-relay Worker described above to exchange/refresh OAuth tokens.</li>
     </ul>
 
     <h2>Sharing, sale, and purpose limitation</h2>

@@ -1,6 +1,10 @@
 import { AuthAdapter } from "../../adapters/AuthAdapter.js";
 import { StorageAdapter } from "../../adapters/StorageAdapter.js";
 
+// KHÔNG nhúng client_secret ở đây. Việc đổi authorization code / refresh token
+// lấy access token đi qua proxy Cloudflare Worker của dự án (worker/index.js),
+// nơi giữ client_secret phía server. Xem docs/OAUTH-SETUP.md mục 6.
+
 export const OAuthManager = {
   async getCachedOAuthToken({ clientId = "", forceRefresh = false } = {}) {
     const manifest = chrome.runtime.getManifest();
@@ -31,9 +35,46 @@ export const OAuthManager = {
     }
 
     await StorageAdapter.removeSession(["oauthToken", "oauthTokenExpires"]);
-    const restored = await this.restoreOAuthTokenSilently(clientId);
-    if (!restored) await this.clearOAuthSessionView();
-    return restored;
+
+    // Ưu tiên refresh_token: bền qua restart trình duyệt/PC và không phụ thuộc
+    // cookie đăng nhập Google hay tracking prevention của Edge (khác với silent
+    // launchWebAuthFlow trước đây, vốn thất bại có hệ thống trên Edge).
+    const restored = await this.restoreOAuthTokenWithRefreshToken(clientId);
+    if (restored) return restored;
+
+    // Dự phòng cho user cũ chưa có refresh_token (nâng cấp từ implicit flow):
+    // thử một lần silent code-flow để lấy refresh_token mới.
+    const restoredSilently = await this.restoreOAuthTokenSilently(clientId);
+    if (!restoredSilently) await this.clearOAuthSessionView();
+    return restoredSilently;
+  },
+
+  async restoreOAuthTokenWithRefreshToken(clientIdOverride = "") {
+    const { googleOAuthAuthorized, googleOAuthClientId, googleOAuthRefreshToken } = await StorageAdapter.getLocal({
+      googleOAuthAuthorized: false,
+      googleOAuthClientId: "",
+      googleOAuthRefreshToken: "",
+    });
+    const clientId = (clientIdOverride || googleOAuthClientId || "").trim();
+    if (!googleOAuthAuthorized || !clientId || !googleOAuthRefreshToken) return "";
+
+    try {
+      const json = await AuthAdapter.refreshAccessToken({
+        refreshToken: googleOAuthRefreshToken,
+      });
+      return await this.saveOAuthSession(
+        { token: json.access_token, expiresIn: json.expires_in },
+        clientId
+      );
+    } catch (err) {
+      // invalid_grant nghĩa là refresh token đã bị revoke/hết hiệu lực: xoá để
+      // không thử lại vô ích, người dùng cần kết nối lại thủ công.
+      if (err?.code === "invalid_grant") {
+        await StorageAdapter.removeLocal(["googleOAuthRefreshToken"]);
+      }
+      console.debug("Làm mới access token bằng refresh_token thất bại:", err?.message || String(err));
+      return "";
+    }
   },
 
   async getAuthToken(interactive, clientId, prompt) {
@@ -52,16 +93,29 @@ export const OAuthManager = {
   async getAuthTokenWebFlow(interactive, clientId, prompt) {
     const scopes = ["https://www.googleapis.com/auth/youtube.readonly"];
     const redirectUrl = AuthAdapter.getRedirectURL();
-    let authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUrl)}&response_type=token&scope=${encodeURIComponent(scopes.join(" "))}&include_granted_scopes=true`;
+    const { verifier, challenge } = await AuthAdapter.createPkcePair();
+
+    let authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUrl)}&response_type=code&access_type=offline&scope=${encodeURIComponent(scopes.join(" "))}&include_granted_scopes=true&code_challenge=${encodeURIComponent(challenge)}&code_challenge_method=S256`;
     if (prompt) {
       authUrl += `&prompt=${encodeURIComponent(prompt)}`;
     }
-    
+
     const responseUrl = await AuthAdapter.launchWebAuthFlow(authUrl, interactive);
-    const params = new URLSearchParams(new URL(responseUrl).hash.substring(1));
-    const token = params.get("access_token");
-    if (!token) throw new Error("Không lấy được access_token từ URL trả về");
-    return { token, expiresIn: parseInt(params.get("expires_in") || "3600", 10) };
+    const params = new URL(responseUrl).searchParams;
+    if (params.get("error")) throw new Error(params.get("error_description") || params.get("error"));
+    const code = params.get("code");
+    if (!code) throw new Error("Không lấy được authorization code từ URL trả về");
+
+    const json = await AuthAdapter.exchangeCodeForToken({
+      code,
+      redirectUri: redirectUrl,
+      codeVerifier: verifier,
+    });
+    return {
+      token: json.access_token,
+      expiresIn: parseInt(json.expires_in || "3600", 10),
+      refreshToken: json.refresh_token || "",
+    };
   },
 
   async restoreOAuthTokenSilently(clientIdOverride = "") {
@@ -86,6 +140,11 @@ export const OAuthManager = {
       oauthToken: token,
       oauthTokenExpires: Date.now() + (expiresIn * 1000) - 60000,
     });
+    if (authRes.refreshToken) {
+      // Bền qua restart: đây là thứ thay thế hoàn toàn nhu cầu silent
+      // launchWebAuthFlow dựa vào cookie trình duyệt.
+      await StorageAdapter.setLocal({ googleOAuthRefreshToken: authRes.refreshToken });
+    }
     await this.rememberOAuthAuthorization(clientId);
     return token;
   },
@@ -105,8 +164,8 @@ export const OAuthManager = {
     if (!googleOAuthAuthorized) return "";
 
     // Ngay lúc PC vừa khởi động, mạng có thể chưa sẵn sàng khi onStartup bắn ra,
-    // khiến silent re-auth thất bại dù grant vẫn còn hiệu lực. Thử lại vài lần
-    // trước khi báo lỗi "cần kết nối lại" cho người dùng.
+    // khiến việc gọi token endpoint thất bại dù refresh_token vẫn còn hiệu lực.
+    // Thử lại vài lần trước khi báo lỗi "cần kết nối lại" cho người dùng.
     const RETRY_DELAYS_MS = [2000, 5000, 10000];
     let token = await this.getCachedOAuthToken();
     for (let i = 0; !token && i < RETRY_DELAYS_MS.length; i++) {
@@ -124,13 +183,17 @@ export const OAuthManager = {
   },
 
   async revokeOAuthGrant(token) {
-    if (!token) return { success: false, warning: "Không có token" };
+    const { googleOAuthRefreshToken } = await StorageAdapter.getLocal({ googleOAuthRefreshToken: "" });
+    // Thu hồi refresh_token (nếu có) sẽ vô hiệu hoá toàn bộ grant, bao gồm mọi
+    // access token đang tồn tại; ưu tiên nó hơn access token đơn lẻ.
+    const tokenToRevoke = googleOAuthRefreshToken || token;
+    if (!tokenToRevoke) return { success: false, warning: "Không có token" };
     try {
       const manifest = chrome.runtime.getManifest();
-      if (manifest.oauth2) {
-        await AuthAdapter.removeCachedAuthToken(token).catch(() => {});
+      if (manifest.oauth2 && token) {
+        await AuthAdapter.removeCachedAuthToken(token).catch(() => { });
       }
-      const response = await fetch(`https://oauth2.googleapis.com/revoke?token=${token}`, {
+      const response = await fetch(`https://oauth2.googleapis.com/revoke?token=${tokenToRevoke}`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" }
       });
@@ -142,7 +205,7 @@ export const OAuthManager = {
   },
 
   async clearLocalOAuthState({ keepTrackedChannels = true } = {}) {
-    await StorageAdapter.removeLocal(["googleOAuthAuthorized"]);
+    await StorageAdapter.removeLocal(["googleOAuthAuthorized", "googleOAuthRefreshToken"]);
     await StorageAdapter.removeSession(["oauthToken", "oauthTokenExpires", "oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
     if (!keepTrackedChannels) {
       const { channels } = await StorageAdapter.getLocal({ channels: {} });
@@ -153,7 +216,7 @@ export const OAuthManager = {
       await StorageAdapter.setLocal({ channels: chs });
     }
   },
-  
+
   async loadOAuthAccountData(token) {
     // This could also be a usecase or placed in YouTubeAdapter
     const [channelRes, subsRes] = await Promise.all([
@@ -162,13 +225,13 @@ export const OAuthManager = {
     ]);
     if (channelRes.error) throw new Error(channelRes.error.message || "Failed to fetch channel");
     if (subsRes.error) throw new Error(subsRes.error.message || "Failed to fetch subscriptions");
-    
+
     let oauthUser = null;
     if (channelRes.items && channelRes.items.length > 0) {
       const snippet = channelRes.items[0].snippet;
       oauthUser = { name: snippet.title, picture: snippet.thumbnails?.default?.url };
     }
-    
+
     let subs = [];
     if (subsRes.items) {
       subs = subsRes.items.map(item => ({
@@ -177,7 +240,7 @@ export const OAuthManager = {
         thumbnail: item.snippet.thumbnails?.default?.url,
       }));
     }
-    
+
     await StorageAdapter.setSession({ oauthUser, fetchedSubs: subs, oauthDataFetchedAt: Date.now() });
     await StorageAdapter.setLocal({ oauthUser }); // bền qua restart để popup hiển thị đúng avatar/tên
     return { subs, oauthUser };

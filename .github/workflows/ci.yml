@@ -169,8 +169,8 @@ jobs:
               errors.append('thiếu silent OAuth restore với prompt=none')
           if 'googleOAuthAuthorized: true' not in s:
               errors.append('thiếu persistent non-sensitive OAuth grant marker')
-          if 'removeLocal(["googleOAuthAuthorized"])' not in s:
-              errors.append('Disconnect chưa xoá OAuth grant marker cục bộ')
+          if not re.search(r'removeLocal\(\["googleOAuthAuthorized",\s*"googleOAuthRefreshToken"\]\)', s):
+              errors.append('Disconnect chưa xoá OAuth grant marker/refresh token cục bộ')
           if re.search(r'setLocal\(\{\s*oauthToken\b', s) or 'chrome.storage.local.set({ oauthToken' in s:
               errors.append('không được lưu OAuth access token trong chrome.storage.local')
           if errors:

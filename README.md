@@ -24,10 +24,10 @@ Google sign-in **không phải** đăng nhập vào Auto Mở Live và không c�
 
 ## Quyền riêng tư và OAuth
 
-- Không có backend của nhà phát triển nhận Google user data.
+- Không có backend lưu trữ dữ liệu người dùng. Bước đổi authorization code/refresh token lấy access token đi qua một Cloudflare Worker (`worker/index.js`) do nhà phát triển vận hành — Worker chỉ trung chuyển request tới Google, không lưu/log token hay dữ liệu người dùng; xem `docs/OAUTH-SETUP.md` mục 2 và 6.
 - OAuth access token chỉ được giữ trong `chrome.storage.session` và bị xoá khi phiên Chrome/Edge kết thúc hoặc người dùng chọn **Ngắt kết nối**.
-- Sau khi trình duyệt khởi động lại, extension chỉ lưu một marker không nhạy cảm cho biết người dùng từng cấp quyền và thử `prompt=none` + `interactive:false` để lấy access token mới từ grant/session Google hiện có. Access token không được ghi vào `chrome.storage.local`.
-- Nếu silent re-auth không khả dụng (đã logout Google, xoá cookie, revoke quyền...), extension yêu cầu người dùng kết nối lại.
+- Sau khi trình duyệt/PC khởi động lại, extension dùng OAuth refresh token (lưu trong `chrome.storage.local`, cùng marker kết nối) để tự xin access token mới thẳng từ Google qua Worker trên — không cần mở lại cửa sổ đăng nhập, không phụ thuộc cookie trình duyệt. Đây thay thế cho cơ chế `prompt=none` cũ vốn hay thất bại trên các trình duyệt chặn cookie bên thứ ba (ví dụ Edge).
+- Nếu refresh token bị revoke hoặc không khả dụng (đã logout Google, revoke quyền, tài khoản cũ chưa có refresh token...), extension yêu cầu người dùng kết nối lại.
 - Danh sách subscriptions vừa tải và thông tin kênh của tài khoản cũng chỉ giữ tạm trong session.
 - Khi ngắt kết nối, extension gửi token hiện có tới endpoint thu hồi của Google, xoá dữ liệu OAuth cục bộ và xoá các kênh đã được thêm trực tiếp từ danh sách subscriptions.
 - API key do người dùng nhập được lưu trong `chrome.storage.local` cho tới khi người dùng xoá/gỡ extension.

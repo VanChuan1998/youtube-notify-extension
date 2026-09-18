@@ -91,16 +91,23 @@ export function harness({ local = {}, session = {}, feeds = {}, items = {} } = {
       launchWebAuthFlow(options, cb) {
         state.authCalls.push(structuredClone(options));
         if (state.authFails) cb(undefined);
-        else cb("https://test.chromiumapp.org/#access_token=mock-session-token&expires_in=3600");
+        else cb("https://test.chromiumapp.org/?code=mock-auth-code");
       } },
   };
   const context = vm.createContext({ chrome, ...rss, ...decide, URL, URLSearchParams,
+    crypto: globalThis.crypto, btoa: globalThis.btoa, atob: globalThis.atob, TextEncoder,
     console: { error: (...args) => state.logs.push(args), debug: (...args) => state.logs.push(args) },
     setTimeout: (fn) => { queueMicrotask(fn); },
     fetch: async (input, options = {}) => {
       const url = new URL(input);
-      state.requests.push({ url: String(url), ...structuredClone(options) });
+      const bodyStr = options.body != null ? String(options.body) : undefined;
+      state.requests.push({ url: String(url), ...structuredClone({ ...options, body: undefined }), body: bodyStr });
       if (state.beforeFetch) await state.beforeFetch(url, options);
+      if (url.pathname === "/oauth/exchange" || url.pathname === "/oauth/refresh") {
+        const json = { access_token: "mock-session-token", expires_in: 3600 };
+        if (url.pathname === "/oauth/exchange") json.refresh_token = "mock-refresh-token";
+        return Response.json(json);
+      }
       if (url.pathname === "/revoke") return new Response("", { status: state.revokeStatus });
       if (url.pathname === "/feeds/videos.xml") {
         if (state.rssStatus !== 200) return new Response(null, { status: state.rssStatus });

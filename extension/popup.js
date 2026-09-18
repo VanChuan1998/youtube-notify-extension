@@ -410,9 +410,10 @@ loadSubsBtn.addEventListener("click", async () => {
   loadSubsBtn.disabled = true;
   setMsg(subsMsg, "Đang mở cửa sổ đăng nhập Google...", "");
   
-  // Access token chỉ nằm trong chrome.storage.session. Nếu grant Google cũ còn
-  // hợp lệ, background sẽ silent re-auth; nếu không, thao tác chủ động này mới
-  // mở UI OAuth. Không ép prompt=consent để tránh hỏi lại không cần thiết.
+  // Access token chỉ nằm trong chrome.storage.session. Nếu đã có refresh token
+  // hợp lệ, background tự lấy access token mới mà không cần mở UI; chỉ khi đó
+  // thất bại (chưa từng kết nối, refresh token bị revoke...) mới mở UI OAuth.
+  // Không ép prompt=consent để tránh hỏi lại không cần thiết.
   chrome.runtime.sendMessage({ type: "fetchSubscriptions", clientId: OAUTH_CLIENT_ID }, async (response) => {
     if (chrome.runtime.lastError) {
       console.error("Lỗi khi tải danh sách kênh:", chrome.runtime.lastError);
