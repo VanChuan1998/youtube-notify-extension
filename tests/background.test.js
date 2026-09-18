@@ -17,7 +17,8 @@ test("already seen initialized channel is reprobed without conditional RSS heade
   const s = make({ local: { channels: { [A]: channel(A, { initialized: true, seenVideoIds: [v], etag: "old", lastModified: "old" }) } } });
   await s.message({ type: "initChannel", channelId: A });
   assert.equal(s.tabs.length, 1);
-  assert.deepEqual(s.requests[0].headers, {}); assert.equal(s.requests[0].cache, "no-store");
+  const req = s.requests.find(r => r.url.includes("/feeds/videos.xml"));
+  assert.deepEqual(req.headers, {}); assert.equal(req.cache, "no-store");
 });
 
 for (const source of ["manual", "subscription"]) test(`addChannel ${source} probes immediately`, async () => {
@@ -109,7 +110,10 @@ test("re-add preserves mode and does not reopen after delete or worker restart",
 
 test("disabled/deleted channels never deliver orphan pending; enabling probes immediately", async () => {
   const s = make({ local: { channels: { [A]: channel(A, { watched: false }) }, pending: { [v]: pendingEntry(v), other: pendingEntry("other", B) } } });
-  await s.alarm(); assert.equal(s.apiRequests().length, 0); assert.equal(Object.keys(s.local.pending).length, 0);
+  console.error("BEFORE ALARM", Object.keys(s.local.pending).length);
+  await s.alarm();
+  console.error("AFTER ALARM", Object.keys(s.local.pending).length);
+  assert.equal(s.apiRequests().length, 0); assert.equal(Object.keys(s.local.pending).length, 0);
   await s.message({ type: "updateChannel", channelId: A, patch: { watched: true } }); assert.equal(s.tabs.length, 1);
   await s.message({ type: "updateChannel", channelId: A, patch: { watched: false } });
   assert.equal(s.local.pending[v], undefined);
@@ -139,10 +143,10 @@ test("three-tab cap defers remaining live tabs instead of marking them opened", 
 });
 
 test("RSS error persists probe intent and next discovery recovers", async () => {
-  const s = make(); s.rssStatus = 503;
+  const s = make(); s.rssStatus = 503; s.apiStatus = 503;
   assert.equal((await s.message({ type: "initChannel", channelId: A })).ok, false);
   assert.equal(s.local.channels[A].needsLiveProbe, true);
-  s.rssStatus = 200; await s.alarm("ytnotify_discover");
+  s.rssStatus = 200; s.apiStatus = 200; await s.alarm("ytnotify_discover");
   assert.equal(s.tabs.length, 1); assert.equal(s.local.channels[A].needsLiveProbe, undefined);
 });
 

@@ -13,7 +13,7 @@ import {
   NEAR_START_MS,
   FAR_CHECK_INTERVAL_MS,
   PENDING_TTL_MS,
-} from "../extension/lib/decide.js";
+} from "../extension/core/domain/Rules.js";
 
 const v = (id) => ({ videoId: id, title: id });
 

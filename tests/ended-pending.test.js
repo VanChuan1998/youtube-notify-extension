@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyVideo, isWaitingForLive, shouldRecheck, UPCOMING_GRACE_MS, VERIFIED_STATE_TTL_MS } from "../extension/lib/decide.js";
+import { classifyVideo, isWaitingForLive, shouldRecheck, UPCOMING_GRACE_MS, VERIFIED_STATE_TTL_MS } from "../extension/core/domain/Rules.js";
 import { harness, channelA as A, channel, video, apiVideo, pendingEntry } from "./helpers/background-harness.js";
 const v = "ZM6xYUYPgPY";
 const future = new Date(Date.now() + 86400000).toISOString();

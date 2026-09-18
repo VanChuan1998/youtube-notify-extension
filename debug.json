@@ -1,0 +1,114 @@
+{
+  "logs": [
+    [
+      "HANDLE_LIVE",
+      "video000001",
+      "liveOnly",
+      0
+    ],
+    [
+      "TAB_CREATED",
+      "video000001"
+    ],
+    [
+      "HANDLE_LIVE",
+      "video000002",
+      "liveOnly",
+      1
+    ],
+    [
+      "TAB_CREATED",
+      "video000002"
+    ],
+    [
+      "HANDLE_LIVE",
+      "video000003",
+      "liveOnly",
+      2
+    ],
+    [
+      "TAB_CREATED",
+      "video000003"
+    ],
+    [
+      "HANDLE_LIVE",
+      "video000004",
+      "liveOnly",
+      3
+    ]
+  ],
+  "requests": [
+    {
+      "url": "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=UULaaaaaaaaaaaaaaaaaaaaaa&maxResults=15&key=test-key",
+      "headers": {}
+    },
+    {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCaaaaaaaaaaaaaaaaaaaaaa",
+      "headers": {},
+      "cache": "no-store"
+    },
+    {
+      "url": "https://www.googleapis.com/youtube/v3/videos?part=snippet%2CliveStreamingDetails&id=video000001%2Cvideo000002%2Cvideo000003%2Cvideo000004&key=test-key",
+      "headers": {},
+      "cache": "no-store"
+    }
+  ],
+  "pending": {
+    "video000001": {
+      "videoId": "video000001",
+      "channelId": "UCaaaaaaaaaaaaaaaaaaaaaa",
+      "title": "API video000001",
+      "thumbnail": "",
+      "state": "live",
+      "scheduledStartTime": "",
+      "firstSeenAt": 1789738579282,
+      "lastCheckedAt": 1789738579282,
+      "lastVerifiedAt": 1789738579283,
+      "actualStartTime": "2026-09-14T00:00:00Z",
+      "actualEndTime": "",
+      "liveHandledAt": 1789738579283
+    },
+    "video000002": {
+      "videoId": "video000002",
+      "channelId": "UCaaaaaaaaaaaaaaaaaaaaaa",
+      "title": "API video000002",
+      "thumbnail": "",
+      "state": "live",
+      "scheduledStartTime": "",
+      "firstSeenAt": 1789738579282,
+      "lastCheckedAt": 1789738579282,
+      "lastVerifiedAt": 1789738579283,
+      "actualStartTime": "2026-09-14T00:00:00Z",
+      "actualEndTime": "",
+      "liveHandledAt": 1789738579283
+    },
+    "video000003": {
+      "videoId": "video000003",
+      "channelId": "UCaaaaaaaaaaaaaaaaaaaaaa",
+      "title": "API video000003",
+      "thumbnail": "",
+      "state": "live",
+      "scheduledStartTime": "",
+      "firstSeenAt": 1789738579282,
+      "lastCheckedAt": 1789738579282,
+      "lastVerifiedAt": 1789738579283,
+      "actualStartTime": "2026-09-14T00:00:00Z",
+      "actualEndTime": "",
+      "liveHandledAt": 1789738579283
+    },
+    "video000004": {
+      "videoId": "video000004",
+      "channelId": "UCaaaaaaaaaaaaaaaaaaaaaa",
+      "title": "API video000004",
+      "thumbnail": "",
+      "state": "live",
+      "scheduledStartTime": "",
+      "firstSeenAt": 1789738579282,
+      "lastCheckedAt": 1789738579282,
+      "lastVerifiedAt": 1789738579283,
+      "actualStartTime": "2026-09-14T00:00:00Z",
+      "actualEndTime": "",
+      "liveHandledAt": 1789738579283
+    }
+  }
+}

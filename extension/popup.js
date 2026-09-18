@@ -1,5 +1,5 @@
 // popup.js
-import { isWaitingForLive, hasStreamStarted, UPCOMING_GRACE_MS } from "./lib/decide.js";
+import { isWaitingForLive, hasStreamStarted, UPCOMING_GRACE_MS } from "./core/domain/Rules.js";
 
 const OAUTH_CLIENT_ID = "736665623723-ovim8oer8j3n4de3otggf72oebgeursn.apps.googleusercontent.com";
 

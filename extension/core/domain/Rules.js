@@ -63,7 +63,7 @@ export function rememberSeen(seenVideoIds, newIds) {
  * liveBroadcastContent một mình là chưa đủ: nó vẫn báo "live" trong khoảng ngắn
  * sau khi stream kết thúc. Có actualEndTime nghĩa là đã tàn, coi như video thường.
  */
-export function classifyVideo(item, previous = {}) {
+export function classifyVideo(item, previous = {}, now = Date.now()) {
   const snippet = item.snippet || {};
   const live = item.liveStreamingDetails || {};
   const broadcast = snippet.liveBroadcastContent || "none";
@@ -73,7 +73,16 @@ export function classifyVideo(item, previous = {}) {
   // Phản hồi mâu thuẫn không được đẩy một stream đã phát ngược về hàng chờ.
   // Không suy đoán ended chỉ từ upcoming/offline; giữ lại để xác minh tiếp.
   if ((broadcast === "live" || broadcast === "upcoming") && (live.actualStartTime || hasStreamStarted(previous))) return "unknown";
-  if (broadcast === "upcoming") return "upcoming";
+  
+  if (broadcast === "upcoming") {
+    // Nếu livestream bị bỏ hoang (không có giờ dự kiến và đã được tạo quá 7 ngày), coi như đã kết thúc.
+    if (!live.scheduledStartTime && snippet.publishedAt) {
+      if (now - Date.parse(snippet.publishedAt) > PENDING_TTL_MS) {
+        return "ended";
+      }
+    }
+    return "upcoming";
+  }
   if (broadcast === "live") return "upcoming"; // báo live nhưng chưa thực sự bắt đầu
 
   // Một số livestream vừa kết thúc có thể chuyển liveBroadcastContent về "none"

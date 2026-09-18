@@ -1,0 +1,472 @@
+✖ initChannel immediately classifies baseline live and delivers without alarm (31.69ms)
+✖ already seen initialized channel is reprobed without conditional RSS headers (2.8085ms)
+✖ addChannel manual probes immediately (3.6191ms)
+✖ addChannel subscription probes immediately (2.8536ms)
+✖ add probe reaches RSS item 15 and only calls API for this channel (3.6007ms)
+✔ probe forces existing far-future pending classification even outside RSS (3.9014ms)
+✖ add probe all/none: no historical delivery; upcoming remains pending (2.2927ms)
+✖ add probe all/ended: no historical delivery; upcoming remains pending (2.0422ms)
+✖ add probe all/upcoming: no historical delivery; upcoming remains pending (3.2097ms)
+✖ add probe liveOnly/none: no historical delivery; upcoming remains pending (2.454ms)
+✖ add probe liveOnly/ended: no historical delivery; upcoming remains pending (2.2109ms)
+✖ add probe liveOnly/upcoming: no historical delivery; upcoming remains pending (1.9579ms)
+✖ upcoming -> live -> ended updates title and clears pending without repeat (2.6429ms)
+✔ ending older live never overwrites newer video's title (2.5014ms)
+✖ startup reopens live once in new session, not after worker restart (2.6061ms)
+✖ overlapping init, startup, alarms and manual checks deliver live once (4.1349ms)
+✖ simultaneous channel additions preserve both channels and pending records (2.807ms)
+✖ re-add preserves mode and does not reopen after delete or worker restart (2.5237ms)
+✖ disabled/deleted channels never deliver orphan pending; enabling probes immediately (3.3178ms)
+✖ tab failure retries tab without repeating successful notification (1.6859ms)
+✖ notification failure retries notification without repeating successful tab (1.8104ms)
+✖ three-tab cap defers remaining live tabs instead of marking them opened (3.2303ms)
+✖ RSS error persists probe intent and next discovery recovers (2.9123ms)
+✖ API quota error and missing credentials retain pending for later confirmation (5.6838ms)
+✔ private/deleted API item is removed without delivery (1.9996ms)
+✖ new normal upload still opens in all mode, not in liveOnly (1.7189ms)
+✖ saving a valid API key immediately processes earlier unclassified add probe (2.2036ms)
+✖ session deduplication retains earlier IDs beyond 100 livestreams (2.8955ms)
+✔ API classification batches at most 50 IDs and keeps all live records (5.5383ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 4
+ℹ fail 25
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 128.9487
+
+✖ failing tests:
+
+test at tests\background.test.js:9:1
+✖ initChannel immediately classifies baseline live and delivers without alarm (31.69ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:11:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:17:1
+✖ already seen initialized channel is reprobed without conditional RSS headers (2.8085ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:20:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:24:50
+✖ addChannel manual probes immediately (3.6191ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:26:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:24:50
+✖ addChannel subscription probes immediately (2.8536ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:26:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:31:1
+✖ add probe reaches RSS item 15 and only calls API for this channel (3.6007ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:36:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:49:3
+✖ add probe all/none: no historical delivery; upcoming remains pending (2.2927ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'API video000001'
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:55:17)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'API video000001',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:49:3
+✖ add probe all/ended: no historical delivery; upcoming remains pending (2.0422ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'API video000001'
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:55:17)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'API video000001',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:49:3
+✖ add probe all/upcoming: no historical delivery; upcoming remains pending (3.2097ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:53:12)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:49:3
+✖ add probe liveOnly/none: no historical delivery; upcoming remains pending (2.454ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'API video000001'
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:55:17)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'API video000001',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:49:3
+✖ add probe liveOnly/ended: no historical delivery; upcoming remains pending (2.2109ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'API video000001'
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:55:17)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'API video000001',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:49:3
+✖ add probe liveOnly/upcoming: no historical delivery; upcoming remains pending (1.9579ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:53:12)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:59:1
+✖ upcoming -> live -> ended updates title and clears pending without repeat (2.6429ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:64:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:77:1
+✖ startup reopens live once in new session, not after worker restart (2.6061ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:79:29)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:86:1
+✖ overlapping init, startup, alarms and manual checks deliver live once (4.1349ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:90:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:93:1
+✖ simultaneous channel additions preserve both channels and pending records (2.807ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 2
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:97:65)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 2,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:101:1
+✖ re-add preserves mode and does not reopen after delete or worker restart (2.5237ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:104:62)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:111:1
+✖ disabled/deleted channels never deliver orphan pending; enabling probes immediately (3.3178ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:114:94)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:119:1
+✖ tab failure retries tab without repeating successful notification (1.6859ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:122:73)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:127:1
+✖ notification failure retries notification without repeating successful tab (1.8104ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:130:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:133:1
+✖ three-tab cap defers remaining live tabs instead of marking them opened (3.2303ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 3
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:138:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 3,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:143:1
+✖ RSS error persists probe intent and next discovery recovers (2.9123ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:148:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:151:1
+✖ API quota error and missing credentials retain pending for later confirmation (5.6838ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(s.local.pending[v])
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:155:12)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:165:1
+✖ new normal upload still opens in all mode, not in liveOnly (1.7189ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:168:48)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:173:1
+✖ saving a valid API key immediately processes earlier unclassified add probe (2.2036ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:178:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests\background.test.js:181:1
+✖ session deduplication retains earlier IDs beyond 100 livestreams (2.8955ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  101 !== 102
+  
+      at TestContext.<anonymous> (file:///D:/Projects/youtube-notify-extension/tests/background.test.js:185:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 101,
+    expected: 102,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

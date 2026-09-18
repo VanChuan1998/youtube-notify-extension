@@ -6,9 +6,15 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "pack": "./scripts/pack-extension.sh",
+    "pack": "node scripts/pack-all.js",
     "fonts": "./scripts/fetch-fonts.sh",
     "deploy": "wrangler deploy"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "adm-zip": "^0.6.1",
+    "archiver": "^8.0.0",
+    "archiver-cli": "^0.1.0",
+    "esbuild": "^0.28.2"
+  }
 }

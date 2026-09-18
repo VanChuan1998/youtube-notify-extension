@@ -3,7 +3,7 @@
 // Feed này miễn phí, không cần API key và không tính vào quota YouTube Data API,
 // nên là cách rẻ nhất để phát hiện video mới. Đổi lại nó KHÔNG cho biết video có
 // phải livestream hay không — livestream xuất hiện trong feed ngay khi được lên
-// lịch, còn rất lâu trước lúc lên sóng. Việc phân biệt do lib/decide.js lo.
+// lịch, còn rất lâu trước lúc lên sóng. Việc phân biệt do core/domain/Rules.js lo.
 //
 // Service worker không có DOMParser, nên parse bằng regex. Feed do YouTube sinh
 // ra nên định dạng ổn định và phẳng; đây không phải parser XML tổng quát.
@@ -64,7 +64,7 @@ export function parseChannelInfo(xml) {
  * Lưu ý về `published` và `updated`: YouTube cập nhật `updated` khi video được
  * sửa, nên thứ tự entry trong feed có thể đổi mà không có video nào mới. Vì vậy
  * không được dựa vào "entry đầu tiên" để phát hiện video mới — phải so bằng tập
- * ID đã thấy (xem decide.js:findNewVideos).
+ * ID đã thấy (xem Rules.js:findNewVideos).
  */
 export function parseFeed(xml) {
   const entries = xml.match(/<entry>[\s\S]*?<\/entry>/g) || [];

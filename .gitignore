@@ -8,3 +8,5 @@ dist/
 # Trạng thái cục bộ của wrangler
 .wrangler/
 .dev.vars
+
+node_modules/

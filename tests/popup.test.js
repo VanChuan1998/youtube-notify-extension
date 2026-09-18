@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
-import * as decide from "../extension/lib/decide.js";
+import * as decide from "../extension/core/domain/Rules.js";
 import { harness, channelA as A, channel, video, apiVideo, pendingEntry } from "./helpers/background-harness.js";
 
 class Element {

@@ -1,8 +1,25 @@
-import vm from "node:vm";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import vm from "node:vm";
+import esbuild from "esbuild";
 import * as rss from "../../extension/lib/rss.js";
-import * as decide from "../../extension/lib/decide.js";
+import * as decide from "../../extension/core/domain/Rules.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Bundle the extension background script to memory so `vm` can execute ES imports as a flat string.
+const backgroundFile = process.env.AUTO_MO_LIVE_TEST_ROOT
+  ? path.join(process.env.AUTO_MO_LIVE_TEST_ROOT, "extension/background.js")
+  : path.join(__dirname, "../../extension/background.js");
+const buildResult = esbuild.buildSync({
+  entryPoints: [backgroundFile],
+  bundle: true,
+  write: false,
+  format: "iife", // IIFE format works perfectly in vm.runInContext
+});
+const code = buildResult.outputFiles[0].text;
 
 export const channelA = "UCaaaaaaaaaaaaaaaaaaaaaa";
 export const channelB = "UCbbbbbbbbbbbbbbbbbbbbbb";
@@ -52,9 +69,10 @@ export function harness({ local = {}, session = {}, feeds = {}, items = {} } = {
   }
   const chrome = {
     storage: { local: area("local"), session: area("session") },
-    runtime: { onMessage: event("message"), onInstalled: event("installed"), onStartup: event("startup") },
+    runtime: { onMessage: event("message"), onInstalled: event("installed"), onStartup: event("startup"), getManifest: () => ({}) },
     alarms: { onAlarm: event("alarm"), getAll(cb) { cb([]); }, create() {} },
     action: { setBadgeText({ text }) { state.badge = text; }, setBadgeBackgroundColor() {} },
+    setBadgeBackgroundColor() {},
     tabs: { async create(options) {
       await Promise.resolve();
       if (state.failTabs-- > 0) throw new Error("tab temporarily unavailable");
@@ -65,6 +83,11 @@ export function harness({ local = {}, session = {}, feeds = {}, items = {} } = {
       state.notifications.push({ id, ...structuredClone(options) }); return id;
     }, clear() {} },
     identity: { getRedirectURL() { return "https://test.chromiumapp.org/"; },
+      getAuthToken(options, cb) {
+        state.authCalls.push({ url: "chrome.identity.getAuthToken", interactive: options.interactive });
+        if (state.authFails) cb(undefined);
+        else cb("mock-session-token");
+      },
       launchWebAuthFlow(options, cb) {
         state.authCalls.push(structuredClone(options));
         if (state.authFails) cb(undefined);
@@ -88,6 +111,13 @@ export function harness({ local = {}, session = {}, feeds = {}, items = {} } = {
         if (state.apiStatus !== 200) return new Response(JSON.stringify({ error: { message: "test API failure" } }), { status: state.apiStatus });
         return Response.json({ items: url.searchParams.get("id").split(",").map(id => state.items[id]).filter(Boolean) });
       }
+      if (url.pathname.endsWith("/playlistItems")) {
+        if (state.apiStatus !== 200) return new Response(JSON.stringify({ error: { message: "test API failure" } }), { status: state.apiStatus });
+        const items = Object.values(state.items).map(item => ({
+          snippet: { resourceId: { videoId: item.id }, channelId: "UCtest", title: item.snippet.title, channelTitle: "Test", publishedAt: "2026-09-14T00:00:00Z", thumbnails: {} }
+        }));
+        return Response.json({ items });
+      }
       if (url.pathname.endsWith("/subscriptions")) return Response.json({ items: [] });
       if (url.pathname.endsWith("/channels")) return Response.json({ items: [] });
       throw new Error(`Unexpected request: ${url}`);
@@ -95,10 +125,7 @@ export function harness({ local = {}, session = {}, feeds = {}, items = {} } = {
   const sourceFile = process.env.AUTO_MO_LIVE_TEST_ROOT
     ? path.join(process.env.AUTO_MO_LIVE_TEST_ROOT, "extension/background.js")
     : new URL("../../extension/background.js", import.meta.url);
-  // Run the production worker with only ESM linkage replaced by its real pure modules.
-  const source = fs.readFileSync(sourceFile, "utf8").replace(/^import [\s\S]*? from "[^"\n]+";\r?\n/gm, "")
-    .replace(/^export /gm, "");
-  function boot() { vm.runInContext(source, context, { filename: "background.js" }); }
+  function boot() { vm.runInContext(code, context, { filename: "background.js" }); }
   boot();
   state.message = (message) => new Promise(resolve => events.message(message, {}, resolve));
   state.chrome = chrome;
