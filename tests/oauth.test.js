@@ -63,7 +63,9 @@ test("revoke failure still clears credentials; disconnect removes subscription p
 test("startup clears legacy persistent OAuth secrets and restores existing grant", async () => {
   const s = harness({ local: { ...oauthLocal, oauthToken: "legacy", oauthTokenExpires: 9999999999999, fetchedSubs: [1], oauthUser: { name: "legacy" } },
     feeds: { [A]: [v] }, items: { [v]: apiVideo(v) } });
-  await s.startup(); assert.equal(s.local.oauthToken, undefined); assert.equal(s.local.oauthUser, undefined);
-  assert.equal(s.local.fetchedSubs, undefined); assert.equal(s.session.oauthToken, "mock-session-token");
-  assert.equal(s.tabs.length, 1);
+  await s.startup(); assert.equal(s.local.oauthToken, undefined);
+  // oauthUser bền qua restart — startup tự silent-restore và lưu lại vào local (Fix 2/3).
+  // clearLegacyOAuthStorage chỉ xoá đúng 2 key legacy (Fix 5); leftover fetchedSubs vô hại, không bị đụng.
+  assert.equal(s.local.oauthUser, null); assert.deepEqual(s.local.fetchedSubs, [1]);
+  assert.equal(s.session.oauthToken, "mock-session-token"); assert.equal(s.tabs.length, 1);
 });

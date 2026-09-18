@@ -100,6 +100,20 @@ export const OAuthManager = {
     await StorageAdapter.removeSession(["oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
   },
 
+  async restoreOAuthOnStartup() {
+    const { googleOAuthAuthorized } = await StorageAdapter.getLocal({ googleOAuthAuthorized: false });
+    if (!googleOAuthAuthorized) return "";
+    const token = await this.getCachedOAuthToken();
+    if (token) {
+      try {
+        await this.loadOAuthAccountData(token);
+      } catch (err) {
+        console.debug("Không tải được dữ liệu tài khoản khi khởi động:", err?.message || String(err));
+      }
+    }
+    return token;
+  },
+
   async revokeOAuthGrant(token) {
     if (!token) return { success: false, warning: "Không có token" };
     try {
@@ -156,6 +170,7 @@ export const OAuthManager = {
     }
     
     await StorageAdapter.setSession({ oauthUser, fetchedSubs: subs, oauthDataFetchedAt: Date.now() });
+    await StorageAdapter.setLocal({ oauthUser }); // bền qua restart để popup hiển thị đúng avatar/tên
     return { subs, oauthUser };
   }
 };

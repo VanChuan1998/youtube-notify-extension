@@ -39,6 +39,9 @@ jobs:
             node --check "$f"
           done
 
+      - name: Cài dependencies
+        run: npm ci
+
       - name: Chạy test
         run: npm test
 

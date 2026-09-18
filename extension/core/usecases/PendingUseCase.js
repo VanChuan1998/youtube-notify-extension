@@ -135,7 +135,8 @@ export async function checkPendingVideos({ channelId = "", force = false } = {})
     }
   } catch (err) {
     if (err && err.status === 401 && !apiKey && oauthToken) {
-      await StorageAdapter.removeLocal(["oauthToken", "oauthTokenExpires", "oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
+      // Token hết hạn nằm trong session — xoá ở đó để getCachedOAuthToken tự restore.
+      await StorageAdapter.removeSession(["oauthToken", "oauthTokenExpires"]);
     }
     const completed = new Set(classified.map(({ entry }) => entry.videoId));
     for (const entry of due) {

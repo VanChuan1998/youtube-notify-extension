@@ -133,6 +133,6 @@ export async function ensureAlarms() {
 export async function clearLegacyOAuthStorage() {
   // Trước v1.1.1 access token từng được lưu bền trong chrome.storage.local.
   // Từ v1.1.1 token chỉ nằm trong chrome.storage.session.
-  await chrome.storage.local.remove(["oauthToken", "oauthTokenExpires", "oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
+  await chrome.storage.local.remove(["oauthToken", "oauthTokenExpires"]);
 }
 
