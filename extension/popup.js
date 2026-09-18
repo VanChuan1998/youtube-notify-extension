@@ -426,8 +426,9 @@ loadSubsBtn.addEventListener("click", async () => {
       setMsg(subsMsg, "Lỗi: " + response.error, "error");
       loadSubsBtn.disabled = false;
     } else {
-      setMsg(subsMsg, `Tìm thấy ${response.subs.length} kênh. Đang hiển thị...`, "ok");
-      
+      const foundMsg = `Tìm thấy ${response.subs.length} kênh. Đang hiển thị...`;
+      setMsg(subsMsg, response.warning ? `${foundMsg} ${response.warning}` : foundMsg, response.warning ? "" : "ok");
+
       if (response.oauthUser) {
         userInfoContainer.style.display = "flex";
         userAvatar.src = response.oauthUser.picture || "";

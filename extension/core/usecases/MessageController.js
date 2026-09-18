@@ -87,7 +87,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             await setStatus({ lastError: "" });
             await runMonitorTask(() => checkPendingVideos({ force: true }));
 
-            sendResponse({ ok: true, subs, oauthUser });
+            // Google chỉ phát refresh_token một lần cho mỗi cặp tài khoản/OAuth
+            // client (trừ khi ép prompt=consent). Nếu người dùng từng đồng ý cấp
+            // quyền offline trước đó (kể cả lần thất bại do lỗi cấu hình), lần
+            // đăng nhập bình thường này có thể chỉ trả về access_token mà không
+            // có refresh_token — kết nối vẫn hoạt động trong phiên hiện tại nhưng
+            // sẽ mất sau khi khởi động lại trình duyệt/PC. Báo ngay cho người
+            // dùng thay vì để họ phát hiện khi restart xong mới thấy lỗi.
+            const { googleOAuthRefreshToken } = await StorageAdapter.getLocal({ googleOAuthRefreshToken: "" });
+            const warning = googleOAuthRefreshToken
+              ? ""
+              : "Kết nối thành công, nhưng Google không cấp quyền duy trì đăng nhập lâu dài lần này. Extension có thể yêu cầu bạn kết nối lại sau khi khởi động lại trình duyệt/PC. Để khắc phục ngay, bấm \"Đặt lại quyền Google\" rồi kết nối lại một lần nữa.";
+
+            sendResponse({ ok: true, subs, oauthUser, warning });
           } catch (err) {
             if (err && err.status === 401) {
               await StorageAdapter.removeSession(["oauthToken", "oauthTokenExpires", "oauthUser", "fetchedSubs", "oauthDataFetchedAt"]);
