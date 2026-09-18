@@ -103,7 +103,16 @@ export const OAuthManager = {
   async restoreOAuthOnStartup() {
     const { googleOAuthAuthorized } = await StorageAdapter.getLocal({ googleOAuthAuthorized: false });
     if (!googleOAuthAuthorized) return "";
-    const token = await this.getCachedOAuthToken();
+
+    // Ngay lúc PC vừa khởi động, mạng có thể chưa sẵn sàng khi onStartup bắn ra,
+    // khiến silent re-auth thất bại dù grant vẫn còn hiệu lực. Thử lại vài lần
+    // trước khi báo lỗi "cần kết nối lại" cho người dùng.
+    const RETRY_DELAYS_MS = [2000, 5000, 10000];
+    let token = await this.getCachedOAuthToken();
+    for (let i = 0; !token && i < RETRY_DELAYS_MS.length; i++) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[i]));
+      token = await this.getCachedOAuthToken();
+    }
     if (token) {
       try {
         await this.loadOAuthAccountData(token);
