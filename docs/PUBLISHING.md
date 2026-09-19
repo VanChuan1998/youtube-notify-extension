@@ -40,22 +40,23 @@ Các URL này phải public và không yêu cầu login.
 
 ## 4. Permission justification
 
-- `storage`: lưu cấu hình theo dõi/API key cục bộ và OAuth session data tạm thời.
-- `alarms`: lập lịch phát hiện video và kiểm tra trạng thái live.
+- `storage`: lưu cấu hình theo dõi/API key cục bộ, OAuth session data tạm thời và OAuth refresh token cục bộ.
+- `alarms`: lập lịch phát hiện video, kiểm tra trạng thái live và làm mới access token định kỳ.
 - `notifications`: thông báo video/livestream.
-- `identity`: luồng OAuth Google tuỳ chọn.
+- `identity`: luồng OAuth Google tuỳ chọn (launchWebAuthFlow, redirect URI).
 - `youtube.com`: đọc feed video của channel đã chọn.
 - `www.googleapis.com`: YouTube Data API v3.
 - `accounts.google.com`: trang OAuth/consent do Google cung cấp.
 - `oauth2.googleapis.com`: thu hồi OAuth token khi người dùng ngắt kết nối.
+- `youtube-notification.chuan-nv.com`: gọi Cloudflare Worker do nhà phát triển vận hành để đổi authorization code/refresh token lấy access token (Worker giữ OAuth client secret phía server, không lưu trữ hay ghi log dữ liệu đi qua — xem `docs/OAUTH-SETUP.md` mục 2).
 
-Không có remote code. Không tải JavaScript từ CDN.
+Không có remote code thực thi trong extension. Không tải JavaScript từ CDN.
 
 ## 5. OAuth disclosure trong listing
 
 Nên nói rõ:
 
-> Google sign-in is optional. If the user chooses “Connect Google & load subscribed channels,” Auto Mở Live requests the read-only `youtube.readonly` scope to retrieve subscriptions and use the YouTube Data API. The extension does not upload, edit, or delete YouTube content. OAuth access tokens are kept only in browser session storage and are not sent to a developer-operated server. After a browser restart, the extension may silently request a new access token from an existing Google grant/session; it does not persist the access token in local storage.
+> Google sign-in is optional. If the user chooses “Connect Google & load subscribed channels,” Auto Mở Live requests the read-only `youtube.readonly` scope to retrieve subscriptions and use the YouTube Data API. The extension does not upload, edit, or delete YouTube content. OAuth access tokens are kept only in browser session storage and are never persisted in local storage. To avoid asking the user to sign in again after every browser/PC restart, the extension stores an OAuth refresh token locally and uses it to obtain a new access token directly from Google; that one exchange step passes through a small Cloudflare Worker the developer operates purely as a pass-through proxy (no storage, no logging) because it requires the OAuth client secret.
 
 ## 6. Screenshots/video cho verification
 
